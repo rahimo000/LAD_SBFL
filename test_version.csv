@@ -1,0 +1,9 @@
+--- Version Information: v1 ---
+Property,Value
+Number of Instructions,10
+Fault Index (err index),2
+Number of B+ (Passing),2
+Number of B- (Failing),6
+Test Pass Rate (%),25.00%
+Matrix Density (%),63.75%
+Fault Covered by Failing Test,True

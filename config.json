@@ -1,0 +1,18 @@
+{
+    "issta13": {
+        "base_dir": "C:\\AHPdatasets",
+        "sub_dir": "1-fault\\Datasets",
+        "projects": [
+            "eventbus", "daikon", "JParsec", "Jester1", "lang", "jaxen",
+            "htmlparser", "draw2d", "codec", "Jexel", "eventbuslite"
+        ]
+    },
+    "siemens": {
+        "base_dir": "C:\\AHPdatasets\\siemens",
+        "sub_dir": "1-fault\\Datasets",
+        "projects": [
+            "print_tokens", "print_tokens2", "replace", "schedule",
+            "schedule2", "tot_info", "t_cas"
+        ]
+    }
+}
