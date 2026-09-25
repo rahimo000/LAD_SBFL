@@ -1,18 +1,22 @@
 import scores_services as ss
 
-def print_exam_scores(version_name: str, results: dict):
+def print_exam_scores(version_name: str, results: dict, include_topk: bool = True):
     """
     Prints the EXAM scores (%) and Top-K results for a specific version.
     """
     if not results: return
 
+    topk = results.get('topk', {})
+    show_topk = include_topk and bool(topk)
+
     print(f"\n--- EXAM Scores (%) and Top-K for {version_name} (Fault Index: {results['fault_index']}) ---")
     
     metrics = ss.get_all_metric_keys()
     
-    header = f"{'Metric':<10} | {'oexam (%)':<12} | {'pexam (%)':<12} | {'lex-ex (%)':<12} | {'rev-ex (%)':<12} | {'delta (%)':<10} | " + \
-             " | ".join([f"l-T{k}" for k in [1, 3, 5]]) + " | " + \
-             " | ".join([f"r-T{k}" for k in [1, 3, 5]])
+    header = f"{'Metric':<10} | {'oexam (%)':<12} | {'pexam (%)':<12} | {'lex-ex (%)':<12} | {'rev-ex (%)':<12} | {'delta (%)':<10}"
+    if show_topk:
+        header += " | " + " | ".join([f"l-T{k}" for k in [1, 3, 5]]) + " | " + \
+                  " | ".join([f"r-T{k}" for k in [1, 3, 5]])
     print(header)
     print("-" * len(header))
 
@@ -28,13 +32,13 @@ def print_exam_scores(version_name: str, results: dict):
         l_val = lex_exam.get(metric, 0.0) * 100
         r_val = rev_exam.get(metric, 0.0) * 100
         delta = p_val - o_val
-        
-        l_topks = [str(topk.get(f'l-Top{k}', {}).get(metric, 0)) for k in [1, 3, 5]]
-        r_topks = [str(topk.get(f'r-Top{k}', {}).get(metric, 0)) for k in [1, 3, 5]]
-        
-        line = f"{metric:<10} | {o_val:<12.4f} | {p_val:<12.4f} | {l_val:<12.4f} | {r_val:<12.4f} | {delta:<10.4f} | " + \
-               " | ".join([f"{v:<4}" for v in l_topks]) + " | " + \
-               " | ".join([f"{v:<4}" for v in r_topks])
+
+        line = f"{metric:<10} | {o_val:<12.4f} | {p_val:<12.4f} | {l_val:<12.4f} | {r_val:<12.4f} | {delta:<10.4f}"
+        if show_topk:
+            l_topks = [str(topk.get(f'l-Top{k}', {}).get(metric, 0)) for k in [1, 3, 5]]
+            r_topks = [str(topk.get(f'r-Top{k}', {}).get(metric, 0)) for k in [1, 3, 5]]
+            line += " | " + " | ".join([f"{v:<4}" for v in l_topks]) + " | " + \
+                    " | ".join([f"{v:<4}" for v in r_topks])
         print(line)
 
 def print_instruction_scores_table(version_name: str, results: dict):

@@ -2,13 +2,20 @@
 
 Run with:  python -m unittest scores_services.metricsTesting -v
 """
+import os
+import tempfile
 import unittest
+import zipfile
 
 import numpy as np
 
 import scores_services as ss
 from scores_services import metric_service as ms
 from scores_services.metric_service import calculate_all_metrics
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SAMPLE_VERSION = os.path.join(REPO_ROOT, 'eventbuslite', '1-fault', 'Datasets', 'v1')
+HAS_SAMPLE_DATA = os.path.isdir(os.path.join(SAMPLE_VERSION, 'Base'))
 
 
 class TestMetrics(unittest.TestCase):
@@ -127,6 +134,67 @@ class TestMetrics(unittest.TestCase):
         idx = {k: i for i, k in enumerate(keys)}
         self.assertTrue(np.allclose(matrix[:, idx['och']], ms.ochiai(self.p, self.n)))
         self.assertTrue(np.allclose(matrix[:, idx['zol']], ms.zoltar(self.p, self.n)))
+
+    # --- Exam-only mode (no Top-K) ------------------------------------------
+    @unittest.skipUnless(HAS_SAMPLE_DATA, "sample eventbuslite data not present")
+    def test_process_version_without_topk(self):
+        from main import process_version
+        res = process_version(SAMPLE_VERSION, with_topk=False)
+        self.assertIsNotNone(res)
+        self.assertEqual(res['topk'], {})
+        self.assertIn('tar', res['best'])
+
+    @unittest.skipUnless(HAS_SAMPLE_DATA, "sample eventbuslite data not present")
+    def test_printers_without_topk(self):
+        import io
+        from contextlib import redirect_stdout
+        from main import process_version
+        from printing_service.version_printing_service import print_exam_scores
+        res = process_version(SAMPLE_VERSION, with_topk=False)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            print_exam_scores("v1", res, include_topk=False)
+        out = buf.getvalue()
+        self.assertIn("oexam", out)
+        self.assertNotIn("l-Top1", out)
+
+
+class TestExcelExport(unittest.TestCase):
+
+    def _fake_averages(self):
+        rng = np.random.default_rng(7)
+        metrics = ss.get_all_metric_keys()
+        topk_keys = [f"l-Top{k}" for k in [1, 3, 5]] + [f"r-Top{k}" for k in [1, 3, 5]]
+        avg = {}
+        for proj in ("projA", "projB"):
+            avg[proj] = {m: {"oexam": rng.random(), "pexam": rng.random(),
+                              "lexical": rng.random(), "reverse": rng.random(),
+                              **{k: rng.integers(0, 2) for k in topk_keys}}
+                         for m in metrics}
+        return avg
+
+    def _export_and_check(self, include_topk):
+        from printing_service.excel_export_service import export_dataset_overall
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "overall.xlsx")
+            export_dataset_overall(path, "fakeDS", self._fake_averages(),
+                                   include_topk=include_topk)
+            self.assertTrue(os.path.isfile(path))
+            self.assertGreater(os.path.getsize(path), 0)
+            with zipfile.ZipFile(path) as z:
+                names = z.namelist()
+            self.assertIn("xl/worksheets/sheet1.xml", names)
+            # Bar chart embedded below the table.
+            self.assertTrue(any(n.startswith("xl/drawings/drawing") for n in names),
+                            f"no drawing found in {names}")
+            self.assertTrue(any(n.startswith("xl/charts/chart") for n in names),
+                            f"no chart found in {names}")
+
+    def test_export_with_topk(self):
+        self._export_and_check(include_topk=True)
+
+    def test_export_exam_only(self):
+        self._export_and_check(include_topk=False)
 
 
 if __name__ == '__main__':

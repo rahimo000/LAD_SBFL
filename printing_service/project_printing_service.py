@@ -1,7 +1,7 @@
 import scores_services as ss
 from typing import Dict, Tuple
 
-def print_project_exam_summary(project_name: str, all_results: Dict[str, dict]):
+def print_project_exam_summary(project_name: str, all_results: Dict[str, dict], include_topk: bool = True):
     """
     Prints a large consolidated EXAM and Top-K scores table for the project.
     """
@@ -29,18 +29,19 @@ def print_project_exam_summary(project_name: str, all_results: Dict[str, dict]):
         print(f"{'':<{v_width}} | {'deltaexam':<{c_width}} | " + " | ".join([f"{(res['worst'].get(m, 0.0)-res['best'].get(m, 0.0))*100:<{m_width}.4f}" for m in metrics]))
         
         # Top-K
-        topk_keys = [f"l-Top{k}" for k in [1, 3, 5]] + [f"r-Top{k}" for k in [1, 3, 5]]
-        for key in topk_keys:
-            print(f"{'':<{v_width}} | {key:<{c_width}} | " + " | ".join([f"{topk.get(key, {}).get(m, 0):<{m_width}}" for m in metrics]))
+        if include_topk:
+            topk_keys = [f"l-Top{k}" for k in [1, 3, 5]] + [f"r-Top{k}" for k in [1, 3, 5]]
+            for key in topk_keys:
+                print(f"{'':<{v_width}} | {key:<{c_width}} | " + " | ".join([f"{topk.get(key, {}).get(m, 0):<{m_width}}" for m in metrics]))
         print("-" * len(header))
 
-def calculate_overall_averages(all_results: Dict[str, dict]) -> Tuple[Dict[str, Dict[str, float]], int]:
+def calculate_overall_averages(all_results: Dict[str, dict], include_topk: bool = True) -> Tuple[Dict[str, Dict[str, float]], int]:
     """Calculates average scores across all versions of a project."""
     metrics = ss.get_all_metric_keys()
     count = len(all_results)
-    
+
     types = ["oexam", "pexam", "lexical", "reverse"]
-    topk_keys = [f"l-Top{k}" for k in [1, 3, 5]] + [f"r-Top{k}" for k in [1, 3, 5]]
+    topk_keys = ([f"l-Top{k}" for k in [1, 3, 5]] + [f"r-Top{k}" for k in [1, 3, 5]]) if include_topk else []
     totals = {m: {t: 0.0 for t in (types + topk_keys)} for m in metrics}
     
     for res in all_results.values():
@@ -57,11 +58,11 @@ def calculate_overall_averages(all_results: Dict[str, dict]) -> Tuple[Dict[str, 
     avg_map = {m: {t: (totals[m][t] / count) for t in (types + topk_keys)} for m in metrics}
     return avg_map, count
 
-def print_overall_exam_scores(project_name: str, all_results: Dict[str, dict]):
+def print_overall_exam_scores(project_name: str, all_results: Dict[str, dict], include_topk: bool = True):
     """Prints the overall average EXAM and Top-K scores (%) across all versions."""
     if not all_results: return
     metrics = ss.get_all_metric_keys()
-    avg_map, count = calculate_overall_averages(all_results)
+    avg_map, count = calculate_overall_averages(all_results, include_topk=include_topk)
     
     print(f"\n--- Overall Average EXAM and Top-K Scores (%) : {project_name} ({count} versions) ---")
     m_width, c_width = 10, 10
@@ -77,6 +78,7 @@ def print_overall_exam_scores(project_name: str, all_results: Dict[str, dict]):
         print(f"{label:<{c_width}} | " + " | ".join(row))
 
     pr('oexam', 'oexam'); pr('pexam', 'pexam'); pr('lex-exam', 'lexical'); pr('rev-exam', 'reverse'); pr('deltaexam', '', True)
-    topk_keys = [f"l-Top{k}" for k in [1, 3, 5]] + [f"r-Top{k}" for k in [1, 3, 5]]
-    for key in topk_keys: pr(key, key)
+    if include_topk:
+        topk_keys = [f"l-Top{k}" for k in [1, 3, 5]] + [f"r-Top{k}" for k in [1, 3, 5]]
+        for key in topk_keys: pr(key, key)
     print("-" * len(header))

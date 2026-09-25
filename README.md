@@ -21,6 +21,7 @@ The tool is optimized for **Big Data** using NumPy vectorization and multiproces
 - Python 3.8+
 - NumPy (`pip install numpy`)
 - `questionary` and `rich` for the interactive TUI (`pip install questionary rich`)
+- `XlsxWriter` for the formatted Excel export (`pip install XlsxWriter`)
 
 ### Configuration
 Dataset paths and project lists are managed in `config.json`. Ensure the `base_dir` paths match your local environment:
@@ -77,6 +78,17 @@ Used to analyze every project within a dataset.
 | Command Option | Description | Example |
 | :--- | :--- | :--- |
 | `-overall` | Print a high-level summary of averages for every project in the dataset. | `python main.py dataset -overall issta13` |
+
+### Exam-only evaluation & Excel export
+
+- `--no-topk` (all services) calculates only EXAM scores and skips the Top-K
+  evaluation, e.g. `python main.py project -overall --no-topk issta13 eventbus`.
+- `-o` routes by extension: `.csv` captures the console tables (all services),
+  while `.xlsx` writes a formatted workbook — supported for
+  `dataset -overall` only. The workbook highlights the winner cell(s) in every
+  row (lowest EXAM, highest Top-K) and adds a bar chart below the table
+  comparing metrics on the TOTAL average EXAM values:
+  `python main.py dataset -overall issta13 -o results.xlsx`.
 
 ---
 

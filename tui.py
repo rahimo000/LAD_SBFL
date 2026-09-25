@@ -42,14 +42,15 @@ def _ask_flags(message: str, options: List[str]) -> Optional[Dict[str, bool]]:
     return {opt: (opt in selected) for opt in options}
 
 
-def _ask_output() -> Optional[str]:
-    """Optional CSV export path. None means console only."""
-    export = questionary.confirm("Export the output to a CSV file?", default=False).ask()
+def _ask_output(excel_hint: bool = False) -> Optional[str]:
+    """Optional export path. None means console only."""
+    export = questionary.confirm("Export the output?", default=False).ask()
     if export is None:  # aborted with Ctrl+C
         raise KeyboardInterrupt
     if not export:
         return None
-    path = questionary.text("CSV file path (empty = console only):").ask()
+    hint = ".csv, or .xlsx for a formatted dataset-overall workbook" if excel_hint else ".csv"
+    path = questionary.text(f"Export file path ({hint}, empty = console only):").ask()
     if path is None:  # aborted with Ctrl+C
         raise KeyboardInterrupt
     if not path.strip():
@@ -57,12 +58,22 @@ def _ask_output() -> Optional[str]:
     return path.strip()
 
 
+def _ask_no_topk() -> bool:
+    """Whether to skip Top-K evaluation (EXAM scores only)."""
+    answer = questionary.confirm("Skip Top-K evaluation (EXAM scores only)?", default=False).ask()
+    if answer is None:  # aborted with Ctrl+C
+        raise KeyboardInterrupt
+    return bool(answer)
+
+
 def build_command(service: str, flags: Dict[str, bool], dataset: str,
                   project: Optional[str] = None, version: Optional[str] = None,
-                  output: Optional[str] = None) -> str:
+                  output: Optional[str] = None, no_topk: bool = False) -> str:
     """Builds the equivalent CLI command string for preview (pure function)."""
     parts = ["python main.py", service]
     parts += [f"-{name}" for name, enabled in flags.items() if enabled]
+    if no_topk:
+        parts.append("--no-topk")
     parts.append(dataset)
     if project:
         parts.append(project)
@@ -111,11 +122,13 @@ def _version_flow(dataset: str, project: str) -> None:
             flags = _ask_flags("Version reports?", ["examscore", "scores", "info"])
             if flags is not None:
                 break
+        no_topk = _ask_no_topk() if flags["examscore"] else False
         output = _ask_output()
-        cmd = build_command("version", flags, dataset, project, version, output)
+        cmd = build_command("version", flags, dataset, project, version, output, no_topk)
         _confirm_and_run(cmd, lambda: run_version_cmd(
             dataset, project, version, examscore=flags["examscore"],
-            scores=flags["scores"], info=flags["info"], output=output))
+            scores=flags["scores"], info=flags["info"], output=output,
+            no_topk=no_topk))
 
 
 def _project_flow(dataset: str) -> None:
@@ -140,11 +153,13 @@ def _project_flow(dataset: str) -> None:
                     flags = _ask_flags("Project reports?", ["examscore", "overall", "info"])
                     if flags is not None:
                         break
+                no_topk = _ask_no_topk() if (flags["examscore"] or flags["overall"]) else False
                 output = _ask_output()
-                cmd = build_command("project", flags, dataset, project, None, output)
+                cmd = build_command("project", flags, dataset, project, None, output, no_topk)
                 _confirm_and_run(cmd, lambda: run_project_cmd(
                     dataset, project, examscore=flags["examscore"],
-                    overall=flags["overall"], info=flags["info"], output=output))
+                    overall=flags["overall"], info=flags["info"], output=output,
+                    no_topk=no_topk))
 
 
 def _dataset_flow() -> None:
@@ -171,11 +186,12 @@ def _dataset_flow() -> None:
                     flags = _ask_flags("Dataset reports?", ["overall", "info"])
                     if flags is not None:
                         break
-                output = _ask_output()
-                cmd = build_command("dataset", flags, dataset, None, None, output)
+                no_topk = _ask_no_topk() if flags["overall"] else False
+                output = _ask_output(excel_hint=flags["overall"])
+                cmd = build_command("dataset", flags, dataset, None, None, output, no_topk)
                 _confirm_and_run(cmd, lambda: run_dataset_cmd(
                     dataset, overall=flags["overall"],
-                    info=flags["info"], output=output))
+                    info=flags["info"], output=output, no_topk=no_topk))
 
 
 def run_tui() -> None:

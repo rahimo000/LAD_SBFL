@@ -22,13 +22,13 @@ def natural_sort_key(s: str) -> List[Any]:
     import re
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
-def process_version_wrapper(args: Tuple[str, str]) -> Tuple[str, Optional[Dict[str, Any]]]:
+def process_version_wrapper(args: Tuple[str, str, bool]) -> Tuple[str, Optional[Dict[str, Any]]]:
     """Wrapper for multiprocessing support."""
-    version_path, version_name = args
-    res = process_version(version_path)
+    version_path, version_name, with_topk = args
+    res = process_version(version_path, with_topk=with_topk)
     return version_name, res
 
-def process_version(version_path: str) -> Optional[Dict[str, Any]]:
+def process_version(version_path: str, with_topk: bool = True) -> Optional[Dict[str, Any]]:
     """Processes a single version folder using optimized NumPy operations."""
     base_dir = os.path.join(version_path, "Base")
     if not os.path.exists(base_dir):
@@ -70,7 +70,7 @@ def process_version(version_path: str) -> Optional[Dict[str, Any]]:
     worst_exam = worst_case_exam_score(score_matrix, fault_index, all_keys)
     lex_exam = lexical_exam_score(score_matrix, fault_index, all_keys)
     rev_exam = reverse_lexical_exam_score(score_matrix, fault_index, all_keys)
-    topk_results = get_version_topk_results(score_matrix, fault_index, all_keys)
+    topk_results = get_version_topk_results(score_matrix, fault_index, all_keys) if with_topk else {}
     
     # Metadata for -info
     num_instructions = p.shape[1]
@@ -101,7 +101,7 @@ def process_version(version_path: str) -> Optional[Dict[str, Any]]:
         }
     }
 
-def process_project(dataset_name: str, project_name: str) -> Optional[Dict[str, Any]]:
+def process_project(dataset_name: str, project_name: str, with_topk: bool = True) -> Optional[Dict[str, Any]]:
     """Helper to process all versions of a project and return results."""
     dataset_root = fm.get_project_path(dataset_name, project_name)
     if not dataset_root:
@@ -110,7 +110,7 @@ def process_project(dataset_name: str, project_name: str) -> Optional[Dict[str, 
     versions = sorted([d for d in os.listdir(dataset_root) if os.path.isdir(os.path.join(dataset_root, d))], key=natural_sort_key)
     
     # Using ProcessPoolExecutor to parallelize version processing
-    version_args = [(os.path.join(dataset_root, v), v) for v in versions]
+    version_args = [(os.path.join(dataset_root, v), v, with_topk) for v in versions]
     results = {}
     
     with ProcessPoolExecutor() as executor:
@@ -122,44 +122,57 @@ def process_project(dataset_name: str, project_name: str) -> Optional[Dict[str, 
 
 def run_version_cmd(dataset: str, project: str, version: str,
                    examscore: bool = False, scores: bool = False,
-                   info: bool = False, output: Optional[str] = None) -> bool:
+                   info: bool = False, output: Optional[str] = None,
+                   no_topk: bool = False) -> bool:
     """Runs the version service. Shared by the CLI and the interactive TUI."""
     dataset_root = fm.get_project_path(dataset, project)
     if not dataset_root:
         logger.error(f"Project path not found for {dataset}/{project}")
         return False
     version_path = os.path.join(dataset_root, version)
-    results = process_version(version_path)
+    results = process_version(version_path, with_topk=not no_topk)
     if results is None:
         logger.error(f"Could not process version {version} of {dataset}/{project}")
         return False
+    if output and output.lower().endswith((".xlsx", ".xls")):
+        logger.error("Excel export (.xlsx) is only supported for: dataset -overall")
+        return False
     with capture_to_csv(output):
         if info: print_version_info(version, results)
-        if examscore: print_exam_scores(version, results)
+        if examscore: print_exam_scores(version, results, include_topk=not no_topk)
         if scores: print_instruction_scores_table(version, results)
     return True
 
 def run_project_cmd(dataset: str, project: str,
                     examscore: bool = False, overall: bool = False,
-                    info: bool = False, output: Optional[str] = None) -> bool:
+                    info: bool = False, output: Optional[str] = None,
+                    no_topk: bool = False) -> bool:
     """Runs the project service. Shared by the CLI and the interactive TUI."""
-    results = process_project(dataset, project)
+    results = process_project(dataset, project, with_topk=not no_topk)
     if not results:
         logger.error(f"Project {project} not found or has no versions.")
         return False
+    if output and output.lower().endswith((".xlsx", ".xls")):
+        logger.error("Excel export (.xlsx) is only supported for: dataset -overall")
+        return False
     with capture_to_csv(output):
         if info: print_project_info(project, results)
-        if examscore: print_project_exam_summary(project, results)
-        if overall: print_overall_exam_scores(project, results)
+        if examscore: print_project_exam_summary(project, results, include_topk=not no_topk)
+        if overall: print_overall_exam_scores(project, results, include_topk=not no_topk)
     return True
 
 def run_dataset_cmd(dataset: str,
                     overall: bool = False, info: bool = False,
-                    output: Optional[str] = None) -> bool:
+                    output: Optional[str] = None, no_topk: bool = False) -> bool:
     """Runs the dataset service. Shared by the CLI and the interactive TUI."""
     dataset_name = dataset.lower()
     if dataset_name not in fm.CONFIG:
         logger.error(f"Dataset {dataset_name} not found in config.")
+        return False
+
+    want_excel = bool(output and output.lower().endswith((".xlsx", ".xls")))
+    if want_excel and not overall:
+        logger.error("Excel export (.xlsx) is only supported for: dataset -overall")
         return False
 
     projects = fm.CONFIG[dataset_name]["projects"]
@@ -168,19 +181,33 @@ def run_dataset_cmd(dataset: str,
 
     for project in projects:
         logger.info(f"Processing project {project}...")
-        results = process_project(dataset_name, project)
+        results = process_project(dataset_name, project, with_topk=not no_topk)
         if results:
             if overall:
-                avg_map, _ = calculate_overall_averages(results)
+                avg_map, _ = calculate_overall_averages(results, include_topk=not no_topk)
                 project_averages[project] = avg_map
             if info:
                 dataset_results[project] = results
+
+    if want_excel:
+        from printing_service.excel_export_service import export_dataset_overall
+        if info:
+            print_dataset_info(dataset_name, dataset_results)
+        if overall:
+            print_dataset_overall_summary(dataset_name, project_averages, include_topk=not no_topk)
+            try:
+                export_dataset_overall(output, dataset_name, project_averages, include_topk=not no_topk)
+                print(f"Exported results to {output}")
+            except Exception as e:
+                logger.error(f"Error exporting to Excel: {e}")
+                return False
+        return True
 
     with capture_to_csv(output):
         if info:
             print_dataset_info(dataset_name, dataset_results)
         if overall:
-            print_dataset_overall_summary(dataset_name, project_averages)
+            print_dataset_overall_summary(dataset_name, project_averages, include_topk=not no_topk)
     return True
 
 def main():
@@ -194,7 +221,9 @@ def main():
     version_parser.add_argument("-examscore", action="store_true")
     version_parser.add_argument("-scores", action="store_true")
     version_parser.add_argument("-info", action="store_true")
-    version_parser.add_argument("-o", "--output", help="Export output to a CSV file")
+    version_parser.add_argument("--no-topk", action="store_true",
+                                help="Calculate only EXAM scores, skip Top-K evaluation")
+    version_parser.add_argument("-o", "--output", help="Export output to a CSV file (.csv)")
     version_parser.add_argument("dataset")
     version_parser.add_argument("project")
     version_parser.add_argument("version")
@@ -204,7 +233,9 @@ def main():
     project_parser.add_argument("-examscore", action="store_true")
     project_parser.add_argument("-overall", action="store_true")
     project_parser.add_argument("-info", action="store_true")
-    project_parser.add_argument("-o", "--output", help="Export output to a CSV file")
+    project_parser.add_argument("--no-topk", action="store_true",
+                                help="Calculate only EXAM scores, skip Top-K evaluation")
+    project_parser.add_argument("-o", "--output", help="Export output to a CSV file (.csv)")
     project_parser.add_argument("dataset")
     project_parser.add_argument("project")
 
@@ -212,7 +243,11 @@ def main():
     dataset_parser = subparsers.add_parser("dataset")
     dataset_parser.add_argument("-overall", action="store_true")
     dataset_parser.add_argument("-info", action="store_true")
-    dataset_parser.add_argument("-o", "--output", help="Export output to a CSV file")
+    dataset_parser.add_argument("--no-topk", action="store_true",
+                                help="Calculate only EXAM scores, skip Top-K evaluation")
+    dataset_parser.add_argument("-o", "--output",
+                                help="Export output (.csv for console tables, "
+                                     ".xlsx for the formatted dataset overall workbook)")
     dataset_parser.add_argument("dataset")
 
     args = parser.parse_args()
@@ -242,16 +277,16 @@ def main():
     if args.service == "version":
         run_version_cmd(args.dataset, args.project, args.version,
                         examscore=args.examscore, scores=args.scores,
-                        info=args.info, output=args.output)
+                        info=args.info, output=args.output, no_topk=args.no_topk)
 
     elif args.service == "project":
         run_project_cmd(args.dataset, args.project,
                         examscore=args.examscore, overall=args.overall,
-                        info=args.info, output=args.output)
+                        info=args.info, output=args.output, no_topk=args.no_topk)
 
     elif args.service == "dataset":
         run_dataset_cmd(args.dataset, overall=args.overall,
-                        info=args.info, output=args.output)
+                        info=args.info, output=args.output, no_topk=args.no_topk)
 
 if __name__ == "__main__":
     main()
