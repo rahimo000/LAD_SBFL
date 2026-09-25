@@ -10,10 +10,13 @@ def calculate_topk_score(score_matrix: np.ndarray, fault_index: int, k: int, cas
         results[key] = 1 if rank <= k else 0
     return results
 
-def get_version_topk_results(score_matrix: np.ndarray, fault_index: int, metric_keys: List[str]) -> Dict[str, Dict[str, int]]:
-    """Computes Top-K variations for a specific version."""
+def get_version_topk_results(score_matrix: np.ndarray, fault_index: int, metric_keys: List[str], evals=None) -> Dict[str, Dict[str, int]]:
+    """Computes Top-K variations for a specific version (only selected evals)."""
     topk_results = {}
     for k in [1, 3, 5]:
-        topk_results[f'l-Top{k}'] = calculate_topk_score(score_matrix, fault_index, k, 'lexical', metric_keys)
-        topk_results[f'r-Top{k}'] = calculate_topk_score(score_matrix, fault_index, k, 'reverse_lexical', metric_keys)
+        for prefix, case in (('l', 'lexical'), ('r', 'reverse_lexical')):
+            key = f'{prefix}-Top{k}'
+            if evals is not None and key not in evals:
+                continue
+            topk_results[key] = calculate_topk_score(score_matrix, fault_index, k, case, metric_keys)
     return topk_results

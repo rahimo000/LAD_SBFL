@@ -1,44 +1,51 @@
 import scores_services as ss
+from typing import Optional
+from scores_services.selection import Selection, default_selection, EVAL_RESULT_KEYS
 
-def print_exam_scores(version_name: str, results: dict, include_topk: bool = True):
+EXAM_COLUMNS = {
+    'oexam': 'oexam (%)',
+    'pexam': 'pexam (%)',
+    'lex-exam': 'lex-ex (%)',
+    'rev-exam': 'rev-ex (%)',
+}
+DELTA_COLUMN = 'delta (%)'
+
+def print_exam_scores(version_name: str, results: dict, selection: Optional[Selection] = None):
     """
-    Prints the EXAM scores (%) and Top-K results for a specific version.
+    Prints the EXAM scores (%) and Top-K results for a specific version
+    (only selected metrics/evaluations).
     """
+    if selection is None:
+        selection = default_selection()
     if not results: return
 
-    topk = results.get('topk', {})
-    show_topk = include_topk and bool(topk)
-
     print(f"\n--- EXAM Scores (%) and Top-K for {version_name} (Fault Index: {results['fault_index']}) ---")
-    
-    metrics = ss.get_all_metric_keys()
-    
-    header = f"{'Metric':<10} | {'oexam (%)':<12} | {'pexam (%)':<12} | {'lex-ex (%)':<12} | {'rev-ex (%)':<12} | {'delta (%)':<10}"
-    if show_topk:
-        header += " | " + " | ".join([f"l-T{k}" for k in [1, 3, 5]]) + " | " + \
-                  " | ".join([f"r-T{k}" for k in [1, 3, 5]])
+
+    metrics = selection.metrics
+
+    header = f"{'Metric':<10}"
+    for eval_key in selection.exam_evals:
+        header += f" | {EXAM_COLUMNS[eval_key]:<12}"
+    if selection.show_delta:
+        header += f" | {DELTA_COLUMN:<10}"
+    for key in selection.topk_evals:
+        header += f" | {key.replace('-Top', '-T'):<4}"
     print(header)
     print("-" * len(header))
 
-    o_exam = results['best']
-    p_exam = results['worst']
-    lex_exam = results.get('lexical', {})
-    rev_exam = results.get('reverse', {})
+    exam_data = {EVAL_RESULT_KEYS[e]: results.get(EVAL_RESULT_KEYS[e], {}) for e in selection.exam_evals}
     topk = results.get('topk', {})
 
     for metric in metrics:
-        o_val = o_exam.get(metric, 0.0) * 100
-        p_val = p_exam.get(metric, 0.0) * 100
-        l_val = lex_exam.get(metric, 0.0) * 100
-        r_val = rev_exam.get(metric, 0.0) * 100
-        delta = p_val - o_val
-
-        line = f"{metric:<10} | {o_val:<12.4f} | {p_val:<12.4f} | {l_val:<12.4f} | {r_val:<12.4f} | {delta:<10.4f}"
-        if show_topk:
-            l_topks = [str(topk.get(f'l-Top{k}', {}).get(metric, 0)) for k in [1, 3, 5]]
-            r_topks = [str(topk.get(f'r-Top{k}', {}).get(metric, 0)) for k in [1, 3, 5]]
-            line += " | " + " | ".join([f"{v:<4}" for v in l_topks]) + " | " + \
-                    " | ".join([f"{v:<4}" for v in r_topks])
+        vals = {rkey: data.get(metric, 0.0) * 100 for rkey, data in exam_data.items()}
+        line = f"{metric:<10}"
+        for eval_key in selection.exam_evals:
+            line += f" | {vals[EVAL_RESULT_KEYS[eval_key]]:<12.4f}"
+        if selection.show_delta:
+            delta = vals.get('worst', 0.0) - vals.get('best', 0.0)
+            line += f" | {delta:<10.4f}"
+        for key in selection.topk_evals:
+            line += f" | {str(topk.get(key, {}).get(metric, 0)):<4}"
         print(line)
 
 def print_instruction_scores_table(version_name: str, results: dict):

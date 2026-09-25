@@ -135,28 +135,90 @@ class TestMetrics(unittest.TestCase):
         self.assertTrue(np.allclose(matrix[:, idx['och']], ms.ochiai(self.p, self.n)))
         self.assertTrue(np.allclose(matrix[:, idx['zol']], ms.zoltar(self.p, self.n)))
 
-    # --- Exam-only mode (no Top-K) ------------------------------------------
+    # --- Selection: parsing & validation --------------------------------------
+    def test_parse_metrics(self):
+        from scores_services.selection import parse_metrics, parse_evals
+        self.assertEqual(parse_metrics(None), ss.get_all_metric_keys())
+        self.assertEqual(parse_metrics("jac,tar"), ['tar', 'jac'])  # canonical order
+        self.assertEqual(parse_evals("pexam,oexam"), ['oexam', 'pexam'])
+        with self.assertRaises(ValueError):
+            parse_metrics("tar,bogus")
+        with self.assertRaises(ValueError):
+            parse_evals("oexam,bogus")
+
+    def test_selection_validation(self):
+        from scores_services.selection import Selection
+        with self.assertRaises(ValueError):
+            Selection(metrics=[], evals=['oexam'])
+        with self.assertRaises(ValueError):
+            Selection(metrics=['mj'], evals=['oexam'])  # aggregator, no base
+        with self.assertRaises(ValueError):
+            Selection(metrics=['tar'], evals=[])
+        sel = Selection(metrics=['tar', 'och', 'jac'], evals=['oexam', 'pexam'])
+        self.assertTrue(sel.show_delta)
+        self.assertFalse(sel.needs_topk)
+        sel2 = Selection(metrics=['tar'], evals=['oexam', 'l-Top1'])
+        self.assertFalse(sel2.show_delta)
+        self.assertTrue(sel2.needs_topk)
+
+    def test_subset_matrix_shape_and_aggregator_scope(self):
+        from scores_services.selection import Selection
+        sel = Selection(metrics=['tar', 'och', 'jac', 'mj', 'apv'], evals=['oexam'])
+        matrix, keys = calculate_all_metrics(self.p, self.n, metrics=sel.metrics)
+        self.assertEqual(keys, ['tar', 'och', 'jac', 'mj', 'apv'])
+        self.assertEqual(matrix.shape, (10, 5))
+        # mj/apv aggregate the selected subset only: verify against direct calls.
+        idx = {k: i for i, k in enumerate(keys)}
+        sub = matrix[:, [idx['tar'], idx['och'], idx['jac']]]
+        self.assertTrue(np.allclose(
+            matrix[:, idx['mj']],
+            ss.calculate_majority_judgment_score(matrix, [idx['tar'], idx['och'], idx['jac']])))
+        self.assertTrue(np.allclose(
+            matrix[:, idx['apv']],
+            ss.calculate_approval_voting_score(matrix, [idx['tar'], idx['och'], idx['jac']])))
+        self.assertTrue(np.all(sub >= 0))
+
+    # --- Exam-only mode (eval deselection) ------------------------------------
     @unittest.skipUnless(HAS_SAMPLE_DATA, "sample eventbuslite data not present")
-    def test_process_version_without_topk(self):
+    def test_process_version_exam_only(self):
         from main import process_version
-        res = process_version(SAMPLE_VERSION, with_topk=False)
+        from scores_services.selection import Selection
+        sel = Selection(evals=['oexam', 'pexam', 'lex-exam', 'rev-exam'])
+        res = process_version(SAMPLE_VERSION, selection=sel)
         self.assertIsNotNone(res)
         self.assertEqual(res['topk'], {})
         self.assertIn('tar', res['best'])
+        self.assertEqual(res['metric_keys'], ss.get_all_metric_keys())
 
     @unittest.skipUnless(HAS_SAMPLE_DATA, "sample eventbuslite data not present")
-    def test_printers_without_topk(self):
+    def test_process_version_subset(self):
+        from main import process_version
+        from scores_services.selection import Selection
+        sel = Selection(metrics=['tar', 'och', 'jac'], evals=['oexam', 'pexam'])
+        res = process_version(SAMPLE_VERSION, selection=sel)
+        self.assertEqual(res['metric_keys'], ['tar', 'och', 'jac'])
+        self.assertEqual(set(res['topk']), set())
+        self.assertIn('tar', res['best'])
+        self.assertNotIn('op2', res['best'])
+
+    @unittest.skipUnless(HAS_SAMPLE_DATA, "sample eventbuslite data not present")
+    def test_printers_with_subset(self):
         import io
         from contextlib import redirect_stdout
         from main import process_version
         from printing_service.version_printing_service import print_exam_scores
-        res = process_version(SAMPLE_VERSION, with_topk=False)
+        from scores_services.selection import Selection
+        sel = Selection(metrics=['tar', 'och', 'jac'], evals=['oexam', 'pexam'])
+        res = process_version(SAMPLE_VERSION, selection=sel)
         buf = io.StringIO()
         with redirect_stdout(buf):
-            print_exam_scores("v1", res, include_topk=False)
+            print_exam_scores("v1", res, selection=sel)
         out = buf.getvalue()
         self.assertIn("oexam", out)
+        self.assertIn("delta", out)  # auto-shown with oexam+pexam
         self.assertNotIn("l-Top1", out)
+        self.assertNotIn("lex-ex", out)
+        self.assertNotIn("ochiai", out)
 
 
 class TestExcelExport(unittest.TestCase):
@@ -173,28 +235,36 @@ class TestExcelExport(unittest.TestCase):
                          for m in metrics}
         return avg
 
-    def _export_and_check(self, include_topk):
+    def _export_and_check(self, selection, expected_series):
+        import re
         from printing_service.excel_export_service import export_dataset_overall
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "overall.xlsx")
             export_dataset_overall(path, "fakeDS", self._fake_averages(),
-                                   include_topk=include_topk)
+                                   selection=selection)
             self.assertTrue(os.path.isfile(path))
             self.assertGreater(os.path.getsize(path), 0)
             with zipfile.ZipFile(path) as z:
                 names = z.namelist()
+                chart = z.read("xl/charts/chart1.xml").decode()
+                shared = z.read("xl/sharedStrings.xml").decode()
             self.assertIn("xl/worksheets/sheet1.xml", names)
-            # Bar chart embedded below the table.
-            self.assertTrue(any(n.startswith("xl/drawings/drawing") for n in names),
-                            f"no drawing found in {names}")
-            self.assertTrue(any(n.startswith("xl/charts/chart") for n in names),
-                            f"no chart found in {names}")
+            series = re.findall(r"<c:tx><c:v>([^<]+)</c:v>", chart)
+            self.assertEqual(series, expected_series)
+            for m in selection.metrics:
+                self.assertIn(m, shared)
 
-    def test_export_with_topk(self):
-        self._export_and_check(include_topk=True)
+    def test_export_all(self):
+        from scores_services.selection import default_selection
+        sel = default_selection()
+        expected = ['oexam', 'pexam', 'lex-exam', 'rev-exam',
+                    'l-Top1', 'l-Top3', 'l-Top5', 'r-Top1', 'r-Top3', 'r-Top5']
+        self._export_and_check(sel, expected)
 
-    def test_export_exam_only(self):
-        self._export_and_check(include_topk=False)
+    def test_export_subset(self):
+        from scores_services.selection import Selection
+        sel = Selection(metrics=['tar', 'och', 'jac'], evals=['oexam', 'pexam'])
+        self._export_and_check(sel, ['oexam', 'pexam'])
 
 
 if __name__ == '__main__':

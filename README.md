@@ -79,15 +79,27 @@ Used to analyze every project within a dataset.
 | :--- | :--- | :--- |
 | `-overall` | Print a high-level summary of averages for every project in the dataset. | `python main.py dataset -overall issta13` |
 
-### Exam-only evaluation & Excel export
+### Selecting score metrics & evaluations
 
-- `--no-topk` (all services) calculates only EXAM scores and skips the Top-K
-  evaluation, e.g. `python main.py project -overall --no-topk issta13 eventbus`.
+Calculation, tables, and the chart all follow your selection (omit a flag
+to select everything):
+
+- `--metrics tar,och,jac` limits the score metrics (any of `tar och jac gp
+  op2 kul2 zol amp mj apv`). `mj`/`apv` aggregate only the selected base metrics.
+- `--evals oexam,pexam` limits the evaluations (any of `oexam pexam lex-exam
+  rev-exam` plus `l/r-Top1/3/5`). `deltaexam` appears automatically when
+  `oexam` and `pexam` are both selected. Exam-only example:
+  `python main.py project -overall --evals oexam,pexam,lex-exam,rev-exam issta13 eventbus`.
+
+### Excel export
+
 - `-o` routes by extension: `.csv` captures the console tables (all services),
   while `.xlsx` writes a formatted workbook — supported for
   `dataset -overall` only. The workbook highlights the winner cell(s) in every
-  row (lowest EXAM, highest Top-K) and adds a bar chart below the table
-  comparing metrics on the TOTAL average EXAM values:
+  row (lowest EXAM, highest Top-K) and adds a bar chart below the table with
+  one series per selected evaluation (TOTAL averages; `deltaexam` is
+  table-only). Note: Top-K averages are 0-100 scaled counts while EXAM is a
+  percentage, so mixed selections share one axis:
   `python main.py dataset -overall issta13 -o results.xlsx`.
 
 ---

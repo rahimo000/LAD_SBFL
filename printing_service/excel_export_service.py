@@ -1,51 +1,33 @@
 """Excel export for the dataset overall summary (XlsxWriter).
 
-Produces a formatted workbook: the overall average table with winner cells
-highlighted (lowest EXAM / highest Top-K per row, ties included) and a bar
-chart below the table comparing metrics on the TOTAL average EXAM values.
+Produces a formatted workbook: the overall average table (selected metrics
+and evaluations only) with winner cells highlighted (lowest EXAM / highest
+Top-K per row, ties included) and a bar chart below the table comparing
+metrics on every selected evaluation (TOTAL average values).
 """
-from typing import Dict, List
+from typing import Dict, Optional
 
-import scores_services as ss
-from printing_service.dataset_printing_service import calculate_grand_average
-
-EXAM_TYPES = [
-    ("oexam", "oexam"),
-    ("pexam", "pexam"),
-    ("lex-exam", "lexical"),
-    ("rev-exam", "reverse"),
-    ("deltaexam", "delta"),
-]
-
-# Series shown in the bar chart (TOTAL average EXAM values).
-CHART_SERIES = ["oexam", "pexam", "lex-exam", "rev-exam"]
+from scores_services.selection import Selection, default_selection
+from printing_service.dataset_printing_service import (
+    calculate_grand_average,
+    row_values,
+    selection_rows,
+)
 
 WINNER_FILL = "#C6EFCE"  # light green
 
 
-def _row_values(avg_map: Dict[str, Dict[str, float]], metrics: List[str], key: str) -> List[float]:
-    """Same values as the console table (percentages)."""
-    if key == "delta":
-        return [(avg_map[m]['pexam'] - avg_map[m]['oexam']) * 100 for m in metrics]
-    return [avg_map[m][key] * 100 for m in metrics]
-
-
-def _row_kinds(all_types) -> Dict[str, str]:
-    """Maps a row label to 'exam' (lower wins) or 'topk' (higher wins)."""
-    exam_labels = {label for label, _ in EXAM_TYPES}
-    return {label: ('exam' if label in exam_labels else 'topk') for label, _ in all_types}
-
-
 def export_dataset_overall(output_path: str, dataset_name: str,
                             project_averages: Dict[str, Dict[str, Dict[str, float]]],
-                            include_topk: bool = True) -> str:
+                            selection: Optional[Selection] = None) -> str:
     """Writes the dataset overall workbook. Returns the output path."""
     import xlsxwriter
 
-    metrics = ss.get_all_metric_keys()
-    topk_keys = ([f"l-Top{k}" for k in [1, 3, 5]] + [f"r-Top{k}" for k in [1, 3, 5]]) if include_topk else []
-    all_types = EXAM_TYPES + [(k, k) for k in topk_keys]
-    kinds = _row_kinds(all_types)
+    if selection is None:
+        selection = default_selection()
+    metrics = selection.metrics
+    all_types = selection_rows(selection)
+    topk_labels = set(selection.topk_evals)
     projects = sorted(project_averages.keys())
     grand_avg = calculate_grand_average(project_averages, all_types)
 
@@ -67,11 +49,8 @@ def export_dataset_overall(output_path: str, dataset_name: str,
     def write_block(first_col_label: str, avg_map, bold: bool):
         nonlocal row
         for idx, (label, key) in enumerate(all_types):
-            values = _row_values(avg_map, metrics, key)
-            if kinds[label] == 'exam':
-                best = min(values)
-            else:
-                best = max(values)
+            values = row_values(avg_map, metrics, key)
+            best = max(values) if label in topk_labels else min(values)
             ws.write(row, 0, first_col_label if idx == 0 else "", total_fmt if bold else None)
             ws.write(row, 1, label, total_fmt if bold else None)
             for col, val in enumerate(values, start=2):
@@ -95,15 +74,18 @@ def export_dataset_overall(output_path: str, dataset_name: str,
     ws.set_column(0, 1, 14)
     ws.set_column(2, 1 + len(metrics), 10)
 
-    # Bar chart below the table: TOTAL average EXAM values per metric.
+    # Bar chart below the table: one series per selected evaluation (TOTAL).
+    # Note: Top-K averages are 0-100 scaled counts while EXAM is a percentage.
     chart = workbook.add_chart({'type': 'column'})
-    chart.set_title({'name': f'Average EXAM by metric — TOTAL ({dataset_name})'})
+    chart.set_title({'name': f'Selected evaluations by metric — TOTAL ({dataset_name})'})
     chart.set_x_axis({'name': 'Metric'})
-    chart.set_y_axis({'name': 'EXAM (%)'})
+    chart.set_y_axis({'name': 'Score'})
     chart.set_style(10)
     first_data_col = 2  # 0-based: 'C'
     last_data_col = 1 + len(metrics)
-    for label in CHART_SERIES:
+    for label, _key in all_types:
+        if label == 'deltaexam':
+            continue  # derived spread, table-only
         excel_row = total_row_of_label[label]
         chart.add_series({
             'name': label,

@@ -1,46 +1,53 @@
 import scores_services as ss
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
+from scores_services.selection import Selection, default_selection, EVAL_AVG_KEYS, DELTA_LABEL
 
-def print_dataset_overall_summary(dataset_name: str, project_averages: Dict[str, Dict[str, Dict[str, float]]], include_topk: bool = True):
+
+def selection_rows(selection: Selection):
+    """Ordered (label, avg_map_key) rows for overall tables (console + Excel)."""
+    rows = [(e, EVAL_AVG_KEYS[e]) for e in selection.exam_evals]
+    if selection.show_delta:
+        rows.append((DELTA_LABEL, 'delta'))
+    rows += [(k, k) for k in selection.topk_evals]
+    return rows
+
+def row_values(avg_map, metrics, key):
+    """Row values in percentages (same as the console table)."""
+    if key == "delta":
+        return [(avg_map[m]['pexam'] - avg_map[m]['oexam']) * 100 for m in metrics]
+    return [avg_map[m][key] * 100 for m in metrics]
+
+def print_dataset_overall_summary(dataset_name: str, project_averages: Dict[str, Dict[str, Dict[str, float]]], selection: Optional[Selection] = None):
     """
-    Prints a consolidated table of overall average scores for all projects in a dataset.
+    Prints a consolidated table of overall average scores for all projects in a dataset
+    (only selected metrics/evaluations).
 
     Args:
         dataset_name: Name of the dataset (e.g., 'issta13')
         project_averages: Dict mapping project_name -> { metric -> { type -> avg_score } }
-        include_topk: When False, Top-K rows are omitted (EXAM only).
+        selection: metric/eval subset (default: all).
     """
+    if selection is None:
+        selection = default_selection()
     if not project_averages:
         print(f"No results found for dataset {dataset_name}.")
         return
 
     print(f"\n--- Dataset Overall Average EXAM and Top-K Summary (%) : {dataset_name} ---")
-    
-    metrics = ss.get_all_metric_keys()
+
+    metrics = selection.metrics
     p_width, t_width, m_width = 15, 12, 10
-    
+
     header = f"{'Project':<{p_width}} | {'Type':<{t_width}} | " + " | ".join([f"{m:<{m_width}}" for m in metrics])
     print(header)
     print("-" * len(header))
-    
+
     sorted_projects = sorted(project_averages.keys())
-    
-    exam_types = [
-        ("oexam", "oexam"),
-        ("pexam", "pexam"),
-        ("lex-exam", "lexical"),
-        ("rev-exam", "reverse"),
-        ("deltaexam", "delta")
-    ]
-    
-    topk_keys = ([f"l-Top{k}" for k in [1, 3, 5]] + [f"r-Top{k}" for k in [1, 3, 5]]) if include_topk else []
-    all_types = exam_types + [(k, k) for k in topk_keys]
+
+    all_types = selection_rows(selection)
 
     def get_row_data(avg_map, label, key):
-        if key == "delta":
-            return [ (avg_map[m]['pexam'] - avg_map[m]['oexam']) * 100 for m in metrics]
-        else:
-            return [avg_map[m][key] * 100 for m in metrics]
+        return row_values(avg_map, metrics, key)
 
     for project in sorted_projects:
         avg_map = project_averages[project]
@@ -65,7 +72,8 @@ def print_dataset_overall_summary(dataset_name: str, project_averages: Dict[str,
 
 def calculate_grand_average(project_averages: Dict[str, Dict[str, Dict[str, float]]], all_types: List[tuple]) -> Dict[str, Dict[str, float]]:
     """Averages project averages into a grand TOTAL map (average of averages)."""
-    metrics = ss.get_all_metric_keys()
+    metrics = [m for m in ss.get_all_metric_keys()
+               if any(m in avg for avg in project_averages.values())]
     num_projects = len(project_averages)
     grand_avg = {m: {key: 0.0 for _, key in all_types} for m in metrics}
 

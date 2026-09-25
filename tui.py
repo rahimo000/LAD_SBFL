@@ -14,6 +14,12 @@ from rich.console import Console
 
 import fileManagment as fm
 from main import natural_sort_key, run_dataset_cmd, run_project_cmd, run_version_cmd
+from scores_services.selection import (
+    Selection,
+    all_evals,
+    all_score_metrics,
+    default_selection,
+)
 
 console = Console()
 
@@ -58,22 +64,42 @@ def _ask_output(excel_hint: bool = False) -> Optional[str]:
     return path.strip()
 
 
-def _ask_no_topk() -> bool:
-    """Whether to skip Top-K evaluation (EXAM scores only)."""
-    answer = questionary.confirm("Skip Top-K evaluation (EXAM scores only)?", default=False).ask()
-    if answer is None:  # aborted with Ctrl+C
-        raise KeyboardInterrupt
-    return bool(answer)
+def _ask_selection() -> Selection:
+    """Checkbox menus for score metrics and evaluations (defaults: all)."""
+    import scores_services as ss
+    display = {key: name for key, _, name in ss.ACTIVE_METRICS}
+    display.update({'mj': 'Majority Judgment', 'apv': 'Approval Voting'})
+
+    while True:
+        metrics = questionary.checkbox(
+            "Score metrics?",
+            choices=[questionary.Choice(f"{m} ({display.get(m, m)})", value=m, checked=True)
+                     for m in all_score_metrics()],
+        ).ask()
+        if metrics is None:  # aborted with Ctrl+C
+            raise KeyboardInterrupt
+        evals = questionary.checkbox(
+            "Evaluations?",
+            choices=[questionary.Choice(e, value=e, checked=True) for e in all_evals()],
+        ).ask()
+        if evals is None:  # aborted with Ctrl+C
+            raise KeyboardInterrupt
+        try:
+            return Selection(metrics=metrics, evals=evals)
+        except ValueError as e:
+            console.print(f"[red]{e} Pick again.[/red]")
 
 
 def build_command(service: str, flags: Dict[str, bool], dataset: str,
                   project: Optional[str] = None, version: Optional[str] = None,
-                  output: Optional[str] = None, no_topk: bool = False) -> str:
+                  output: Optional[str] = None,
+                  selection: Optional[Selection] = None) -> str:
     """Builds the equivalent CLI command string for preview (pure function)."""
     parts = ["python main.py", service]
     parts += [f"-{name}" for name, enabled in flags.items() if enabled]
-    if no_topk:
-        parts.append("--no-topk")
+    if selection is None:
+        selection = default_selection()
+    parts += selection.cli_flags()
     parts.append(dataset)
     if project:
         parts.append(project)
@@ -122,13 +148,13 @@ def _version_flow(dataset: str, project: str) -> None:
             flags = _ask_flags("Version reports?", ["examscore", "scores", "info"])
             if flags is not None:
                 break
-        no_topk = _ask_no_topk() if flags["examscore"] else False
+        selection = _ask_selection()
         output = _ask_output()
-        cmd = build_command("version", flags, dataset, project, version, output, no_topk)
+        cmd = build_command("version", flags, dataset, project, version, output, selection)
         _confirm_and_run(cmd, lambda: run_version_cmd(
             dataset, project, version, examscore=flags["examscore"],
             scores=flags["scores"], info=flags["info"], output=output,
-            no_topk=no_topk))
+            selection=selection))
 
 
 def _project_flow(dataset: str) -> None:
@@ -153,13 +179,13 @@ def _project_flow(dataset: str) -> None:
                     flags = _ask_flags("Project reports?", ["examscore", "overall", "info"])
                     if flags is not None:
                         break
-                no_topk = _ask_no_topk() if (flags["examscore"] or flags["overall"]) else False
+                selection = _ask_selection()
                 output = _ask_output()
-                cmd = build_command("project", flags, dataset, project, None, output, no_topk)
+                cmd = build_command("project", flags, dataset, project, None, output, selection)
                 _confirm_and_run(cmd, lambda: run_project_cmd(
                     dataset, project, examscore=flags["examscore"],
                     overall=flags["overall"], info=flags["info"], output=output,
-                    no_topk=no_topk))
+                    selection=selection))
 
 
 def _dataset_flow() -> None:
@@ -186,12 +212,12 @@ def _dataset_flow() -> None:
                     flags = _ask_flags("Dataset reports?", ["overall", "info"])
                     if flags is not None:
                         break
-                no_topk = _ask_no_topk() if flags["overall"] else False
+                selection = _ask_selection()
                 output = _ask_output(excel_hint=flags["overall"])
-                cmd = build_command("dataset", flags, dataset, None, None, output, no_topk)
+                cmd = build_command("dataset", flags, dataset, None, None, output, selection)
                 _confirm_and_run(cmd, lambda: run_dataset_cmd(
                     dataset, overall=flags["overall"],
-                    info=flags["info"], output=output, no_topk=no_topk))
+                    info=flags["info"], output=output, selection=selection))
 
 
 def run_tui() -> None:

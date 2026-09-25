@@ -22,3 +22,8 @@ def lexical_exam_score(score_matrix: np.ndarray, fault_index: int, metric_keys: 
 
 def reverse_lexical_exam_score(score_matrix: np.ndarray, fault_index: int, metric_keys: List[str]) -> Dict[str, float]:
     return _calc_exam_all_metrics(score_matrix, fault_index, metric_keys, 'reverse_lexical')
+
+def exam_score_for_eval(score_matrix: np.ndarray, fault_index: int, metric_keys: List[str], eval_key: str) -> Dict[str, float]:
+    """Computes EXAM for a single selected evaluation (oexam/pexam/lex-exam/rev-exam)."""
+    from scores_services.selection import EXAM_CASES
+    return _calc_exam_all_metrics(score_matrix, fault_index, metric_keys, EXAM_CASES[eval_key])

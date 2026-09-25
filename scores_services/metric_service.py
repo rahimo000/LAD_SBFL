@@ -19,30 +19,43 @@ __all__ = [
     'calculate_all_metrics',
 ]
 
-def calculate_all_metrics(p: np.ndarray, n: np.ndarray) -> tuple:
-    """Computes all metrics in a single optimized pass while preserving exact rounding."""
-    all_keys = ss.get_all_metric_keys()
+_BASE_FUNCS = {
+    'tar': Tarontula,
+    'och': ochiai,
+    'jac': jaccard,
+    'gp': gp13,
+    'op2': op2,
+    'kul2': kulczynski2,
+    'zol': zoltar,
+    'amp': ample,
+}
+
+def calculate_all_metrics(p: np.ndarray, n: np.ndarray, metrics=None) -> tuple:
+    """Computes the selected metrics (default: all) while preserving exact rounding.
+
+    Aggregators (mj/apv) are computed over the *selected* base subset only.
+    Returns (score_matrix, keys) where keys are in canonical order.
+    """
+    from scores_services import get_all_metric_keys
+    if metrics is None:
+        metrics = get_all_metric_keys()
+    keys = [k for k in get_all_metric_keys() if k in metrics]
     num_instr = p.shape[1]
-    
-    score_matrix = np.zeros((num_instr, len(all_keys)))
-    key_to_idx = {key: i for i, key in enumerate(all_keys)}
 
-    # 1. Standard Metrics
-    score_matrix[:, key_to_idx['tar']] = Tarontula(p, n)
-    score_matrix[:, key_to_idx['och']] = ochiai(p, n)
-    score_matrix[:, key_to_idx['jac']] = jaccard(p, n)
-    score_matrix[:, key_to_idx['gp']] = gp13(p, n)
-    score_matrix[:, key_to_idx['op2']] = op2(p, n)
-    score_matrix[:, key_to_idx['kul2']] = kulczynski2(p, n)
-    score_matrix[:, key_to_idx['zol']] = zoltar(p, n)
-    score_matrix[:, key_to_idx['amp']] = ample(p, n)
+    score_matrix = np.zeros((num_instr, len(keys)))
+    key_to_idx = {key: i for i, key in enumerate(keys)}
 
-    # 2. Aggregators
-    active_indices = [key_to_idx[k] for k in ['tar', 'och', 'jac', 'gp', 'op2', 'kul2', 'zol', 'amp']]
-    
+    # 1. Standard Metrics (only the selected ones are computed)
+    for key, func in _BASE_FUNCS.items():
+        if key in key_to_idx:
+            score_matrix[:, key_to_idx[key]] = func(p, n)
+
+    # 2. Aggregators over the selected base subset
+    active_indices = [key_to_idx[k] for k in _BASE_FUNCS if k in key_to_idx]
+
     if 'apv' in key_to_idx:
         score_matrix[:, key_to_idx['apv']] = ss.calculate_approval_voting_score(score_matrix, active_indices)
     if 'mj' in key_to_idx:
         score_matrix[:, key_to_idx['mj']] = ss.calculate_majority_judgment_score(score_matrix, active_indices)
-        
-    return score_matrix, all_keys
+
+    return score_matrix, keys
