@@ -8,8 +8,12 @@ ACTIVE_METRICS = [
     ('och', None, 'Ochiai'),
     ('jac', None, 'Jaccard'),
     ('gp', None, 'GP13'),
+    ('op2', None, 'Op2'),
+    ('kul2', None, 'Kulczynski2'),
+    ('zol', None, 'Zoltar'),
+    ('amp', None, 'Ample'),
 ]
 
 def get_all_metric_keys():
     """Returns a list of all active and aggregate metric keys in the preferred order."""
-    return ['tar', 'och', 'jac', 'gp', 'mj', 'apv']
+    return ['tar', 'och', 'jac', 'gp', 'op2', 'kul2', 'zol', 'amp', 'mj', 'apv']
