@@ -20,6 +20,7 @@ The tool is optimized for **Big Data** using NumPy vectorization and multiproces
 ### Prerequisites
 - Python 3.8+
 - NumPy (`pip install numpy`)
+- `questionary` and `rich` for the interactive TUI (`pip install questionary rich`)
 
 ### Configuration
 Dataset paths and project lists are managed in `config.json`. Ensure the `base_dir` paths match your local environment:
@@ -32,6 +33,21 @@ Dataset paths and project lists are managed in `config.json`. Ensure the `base_d
     }
 }
 ```
+
+---
+
+## Interactive TUI
+
+Don't want to memorize commands? Just run the app with no arguments:
+
+```bash
+python main.py
+```
+
+An arrow-key menu guides you through dataset → project → version selection,
+report options, and optional CSV export. Every run shows the equivalent CLI
+command, so you can learn (or script) it as you go. The classic CLI below
+keeps working unchanged.
 
 ---
 
@@ -70,8 +86,12 @@ The tool maintains a strict metric ordering for all reports:
 2. **och** (Ochiai)
 3. **jac** (Jaccard)
 4. **gp** (GP13)
-5. **mj** (Majority Judgment)
-6. **apv** (Approval Voting)
+5. **op2** (Op2, normalized to [0,1])
+6. **kul2** (Kulczynski2)
+7. **zol** (Zoltar)
+8. **amp** (Ample)
+9. **mj** (Majority Judgment)
+10. **apv** (Approval Voting)
 
 ## Testing
 To verify the evaluation logic, run the included unit tests:

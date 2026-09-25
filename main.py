@@ -120,6 +120,69 @@ def process_project(dataset_name: str, project_name: str) -> Optional[Dict[str, 
                 
     return results
 
+def run_version_cmd(dataset: str, project: str, version: str,
+                   examscore: bool = False, scores: bool = False,
+                   info: bool = False, output: Optional[str] = None) -> bool:
+    """Runs the version service. Shared by the CLI and the interactive TUI."""
+    dataset_root = fm.get_project_path(dataset, project)
+    if not dataset_root:
+        logger.error(f"Project path not found for {dataset}/{project}")
+        return False
+    version_path = os.path.join(dataset_root, version)
+    results = process_version(version_path)
+    if results is None:
+        logger.error(f"Could not process version {version} of {dataset}/{project}")
+        return False
+    with capture_to_csv(output):
+        if info: print_version_info(version, results)
+        if examscore: print_exam_scores(version, results)
+        if scores: print_instruction_scores_table(version, results)
+    return True
+
+def run_project_cmd(dataset: str, project: str,
+                    examscore: bool = False, overall: bool = False,
+                    info: bool = False, output: Optional[str] = None) -> bool:
+    """Runs the project service. Shared by the CLI and the interactive TUI."""
+    results = process_project(dataset, project)
+    if not results:
+        logger.error(f"Project {project} not found or has no versions.")
+        return False
+    with capture_to_csv(output):
+        if info: print_project_info(project, results)
+        if examscore: print_project_exam_summary(project, results)
+        if overall: print_overall_exam_scores(project, results)
+    return True
+
+def run_dataset_cmd(dataset: str,
+                    overall: bool = False, info: bool = False,
+                    output: Optional[str] = None) -> bool:
+    """Runs the dataset service. Shared by the CLI and the interactive TUI."""
+    dataset_name = dataset.lower()
+    if dataset_name not in fm.CONFIG:
+        logger.error(f"Dataset {dataset_name} not found in config.")
+        return False
+
+    projects = fm.CONFIG[dataset_name]["projects"]
+    project_averages = {}
+    dataset_results = {}
+
+    for project in projects:
+        logger.info(f"Processing project {project}...")
+        results = process_project(dataset_name, project)
+        if results:
+            if overall:
+                avg_map, _ = calculate_overall_averages(results)
+                project_averages[project] = avg_map
+            if info:
+                dataset_results[project] = results
+
+    with capture_to_csv(output):
+        if info:
+            print_dataset_info(dataset_name, dataset_results)
+        if overall:
+            print_dataset_overall_summary(dataset_name, project_averages)
+    return True
+
 def main():
     setup_logging()
     
@@ -154,58 +217,41 @@ def main():
 
     args = parser.parse_args()
     if not args.service:
-        parser.print_help()
+        # No subcommand: launch the interactive TUI (unless non-interactive).
+        import sys
+        try:
+            import questionary  # noqa: F401
+        except ImportError:
+            parser.print_help()
+            print("\nTip: install the TUI dependencies with: pip install questionary rich")
+            return
+        if not sys.stdin.isatty():
+            parser.print_help()
+            return
+        try:
+            from tui import run_tui
+        except ImportError as e:
+            logger.error(f"Could not load the TUI: {e}")
+            return
+        try:
+            run_tui()
+        except KeyboardInterrupt:
+            print("\nBye!")
         return
 
     if args.service == "version":
-        dataset_root = fm.get_project_path(args.dataset, args.project)
-        if not dataset_root:
-            logger.error(f"Project path not found for {args.dataset}/{args.project}")
-            return
-        version_path = os.path.join(dataset_root, args.version)
-        results = process_version(version_path)
-        if results:
-            with capture_to_csv(args.output):
-                if args.info: print_version_info(args.version, results)
-                if args.examscore: print_exam_scores(args.version, results)
-                if args.scores: print_instruction_scores_table(args.version, results)
+        run_version_cmd(args.dataset, args.project, args.version,
+                        examscore=args.examscore, scores=args.scores,
+                        info=args.info, output=args.output)
 
     elif args.service == "project":
-        results = process_project(args.dataset, args.project)
-        if not results:
-            logger.error(f"Project {args.project} not found or has no versions.")
-            return
-
-        with capture_to_csv(args.output):
-            if args.info: print_project_info(args.project, results)
-            if args.examscore: print_project_exam_summary(args.project, results)
-            if args.overall: print_overall_exam_scores(args.project, results)
+        run_project_cmd(args.dataset, args.project,
+                        examscore=args.examscore, overall=args.overall,
+                        info=args.info, output=args.output)
 
     elif args.service == "dataset":
-        dataset_name = args.dataset.lower()
-        if dataset_name not in fm.CONFIG:
-            logger.error(f"Dataset {dataset_name} not found in config.")
-            return
-        
-        projects = fm.CONFIG[dataset_name]["projects"]
-        project_averages = {}
-        dataset_results = {}
-        
-        for project in projects:
-            logger.info(f"Processing project {project}...")
-            results = process_project(dataset_name, project)
-            if results:
-                if args.overall:
-                    avg_map, _ = calculate_overall_averages(results)
-                    project_averages[project] = avg_map
-                if args.info:
-                    dataset_results[project] = results
-                
-        with capture_to_csv(args.output):
-            if args.info:
-                print_dataset_info(dataset_name, dataset_results)
-            if args.overall:
-                print_dataset_overall_summary(dataset_name, project_averages)
+        run_dataset_cmd(args.dataset, overall=args.overall,
+                        info=args.info, output=args.output)
 
 if __name__ == "__main__":
     main()
