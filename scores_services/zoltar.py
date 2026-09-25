@@ -1,5 +1,7 @@
 import numpy as np
 
+from .rounding import format_scores
+
 
 def zoltar(p, n):
     """Vectorized Zoltar with exact rounding (2 decimals).
@@ -18,4 +20,4 @@ def zoltar(p, n):
         denom = n_e + nf + p_e + penalty
         scores = np.where(n_e == 0, 0.0, n_e / denom)
 
-    return np.round(np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0), 2)
+    return format_scores(np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0), 2)
