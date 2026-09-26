@@ -48,8 +48,24 @@ class TestMetrics(unittest.TestCase):
         self.assertTrue(np.allclose(ms.jaccard(self.p, self.n), expected))
 
     def test_gp13(self):
-        expected = [0.943, 0.964, 1.0, 0.952, 1.0, 0.933, 1.0, 0.833, 0.833, 0.943]
+        expected = [0.94, 0.96, 1.0, 0.95, 1.0, 0.93, 1.0, 0.83, 0.83, 0.94]
         self.assertTrue(np.allclose(ms.gp13(self.p, self.n), expected))
+
+    def test_metric_decimals_param(self):
+        from scores_services.rounding import Precision, resolve_precision, validate_precision
+        scores4 = ms.gp13(self.p, self.n, decimals=4)
+        self.assertAlmostEqual(scores4[0], 0.9429, places=4)
+        self.assertEqual(ms.gp13(self.p, self.n)[0], 0.94)  # default is 2, like the others
+        with self.assertRaises(ValueError):
+            validate_precision(11, "--precision")
+        with self.assertRaises(ValueError):
+            validate_precision("x", "--precision")
+        p = resolve_precision(None, None, None, None, None)
+        self.assertEqual((p.scores, p.version, p.program, p.overall), (2, 2, 2, 2))
+        p = resolve_precision(4, None, 3, None, None)
+        self.assertEqual((p.scores, p.version, p.program, p.overall), (4, 3, 4, 4))
+        self.assertEqual(Precision().cli_flags(), [])
+        self.assertEqual(Precision(4, 4, 4, 4).cli_flags(), ["--precision", "4"])
 
     # --- New metrics: known values (column 2: ef=6, ep=0 -> all 1.0) -------
     def test_new_metrics_known_values(self):
@@ -178,6 +194,27 @@ class TestMetrics(unittest.TestCase):
             ss.calculate_approval_voting_score(matrix, [idx['tar'], idx['och'], idx['jac']])))
         self.assertTrue(np.all(sub >= 0))
 
+    @unittest.skipUnless(HAS_SAMPLE_DATA, "sample eventbuslite data not present")
+    def test_phase_rounding_of_averages(self):
+        from main import process_project
+        from printing_service.project_printing_service import calculate_overall_averages
+        from printing_service.dataset_printing_service import calculate_grand_average, selection_rows
+        from scores_services.selection import default_selection
+        sel = default_selection()
+        results = process_project('issta13', 'eventbuslite', selection=sel)
+        avg2, _ = calculate_overall_averages(results, selection=sel, decimals=2)
+        avg4, _ = calculate_overall_averages(results, selection=sel, decimals=4)
+        self.assertEqual(avg2['tar']['oexam'], round(avg4['tar']['oexam'], 2))
+        rows = selection_rows(sel)
+        grand = calculate_grand_average({'proj': avg4}, rows, decimals=2)
+        for m in grand:
+            for _, key in rows:
+                if key == 'delta':
+                    expected = round(avg4[m]['pexam'] - avg4[m]['oexam'], 2)
+                else:
+                    expected = round(avg4[m][key], 2)
+                self.assertEqual(grand[m][key], expected)
+
     # --- Exam-only mode (eval deselection) ------------------------------------
     @unittest.skipUnless(HAS_SAMPLE_DATA, "sample eventbuslite data not present")
     def test_process_version_exam_only(self):
@@ -257,14 +294,25 @@ class TestExcelExport(unittest.TestCase):
     def test_export_all(self):
         from scores_services.selection import default_selection
         sel = default_selection()
-        expected = ['oexam', 'pexam', 'lex-exam', 'rev-exam',
+        expected = ['oexam', 'pexam', 'lex-exam', 'rev-exam', 'deltaexam',
                     'l-Top1', 'l-Top3', 'l-Top5', 'r-Top1', 'r-Top3', 'r-Top5']
         self._export_and_check(sel, expected)
 
     def test_export_subset(self):
         from scores_services.selection import Selection
         sel = Selection(metrics=['tar', 'och', 'jac'], evals=['oexam', 'pexam'])
-        self._export_and_check(sel, ['oexam', 'pexam'])
+        self._export_and_check(sel, ['oexam', 'pexam', 'deltaexam'])
+
+    def test_export_decimals_format(self):
+        from printing_service.excel_export_service import export_dataset_overall
+        from scores_services.selection import default_selection
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "overall.xlsx")
+            export_dataset_overall(path, "fakeDS", self._fake_averages(),
+                                   selection=default_selection(), decimals=4)
+            with zipfile.ZipFile(path) as z:
+                styles = z.read("xl/styles.xml").decode()
+            self.assertIn("0.0000", styles)
 
 
 if __name__ == '__main__':

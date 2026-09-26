@@ -6,9 +6,12 @@ import scores_services as ss
 from typing import Dict, List, Tuple, Any, Optional
 from concurrent.futures import ProcessPoolExecutor
 from scores_services.metric_service import calculate_all_metrics
+from scores_services.rounding import Precision, round_value
 from scores_services.selection import Selection, default_selection, EVAL_RESULT_KEYS
 from evaluation_services.exam_score import exam_score_for_eval
 from evaluation_services.topk_evaluation_service import get_version_topk_results
+
+DEFAULT_PRECISION = Precision()
 from printing_service.version_printing_service import print_exam_scores, print_instruction_scores_table
 from printing_service.project_printing_service import print_project_exam_summary, print_overall_exam_scores, calculate_overall_averages
 from printing_service.dataset_printing_service import print_dataset_overall_summary
@@ -23,13 +26,14 @@ def natural_sort_key(s: str) -> List[Any]:
     import re
     return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
-def process_version_wrapper(args: Tuple[str, str, Selection]) -> Tuple[str, Optional[Dict[str, Any]]]:
+def process_version_wrapper(args: Tuple[str, str, Selection, Precision]) -> Tuple[str, Optional[Dict[str, Any]]]:
     """Wrapper for multiprocessing support."""
-    version_path, version_name, selection = args
-    res = process_version(version_path, selection=selection)
+    version_path, version_name, selection, precision = args
+    res = process_version(version_path, selection=selection, precision=precision)
     return version_name, res
 
-def process_version(version_path: str, selection: Optional[Selection] = None) -> Optional[Dict[str, Any]]:
+def process_version(version_path: str, selection: Optional[Selection] = None,
+                    precision: Optional[Precision] = None) -> Optional[Dict[str, Any]]:
     """Processes a single version folder using optimized NumPy operations."""
     base_dir = os.path.join(version_path, "Base")
     if not os.path.exists(base_dir):
@@ -59,19 +63,24 @@ def process_version(version_path: str, selection: Optional[Selection] = None) ->
         logger.warning(f"No fault index file found in {version_path}")
         return None
 
-    # Vectorized Metric Calculation (only selected metrics)
+    # Vectorized Metric Calculation (only selected metrics, scores precision)
     if selection is None:
         selection = default_selection()
+    if precision is None:
+        precision = DEFAULT_PRECISION
     try:
-        score_matrix, all_keys = calculate_all_metrics(p, n, metrics=selection.metrics)
+        score_matrix, all_keys = calculate_all_metrics(p, n, metrics=selection.metrics,
+                                                       decimals=precision.scores)
     except Exception as e:
         logger.error(f"Error calculating metrics for {version_path}: {e}")
         return None
 
-    # Evaluation (only selected evaluations)
+    # Evaluation (only selected evaluations, version precision)
     exam_data = {}
     for eval_key in selection.exam_evals:
-        exam_data[EVAL_RESULT_KEYS[eval_key]] = exam_score_for_eval(score_matrix, fault_index, all_keys, eval_key)
+        raw = exam_score_for_eval(score_matrix, fault_index, all_keys, eval_key)
+        exam_data[EVAL_RESULT_KEYS[eval_key]] = {m: round_value(v, precision.version)
+                                                 for m, v in raw.items()}
     topk_results = get_version_topk_results(score_matrix, fault_index, all_keys, evals=selection.topk_evals)
     
     # Metadata for -info
@@ -104,10 +113,13 @@ def process_version(version_path: str, selection: Optional[Selection] = None) ->
         }
     }
 
-def process_project(dataset_name: str, project_name: str, selection: Optional[Selection] = None) -> Optional[Dict[str, Any]]:
+def process_project(dataset_name: str, project_name: str, selection: Optional[Selection] = None,
+                    precision: Optional[Precision] = None) -> Optional[Dict[str, Any]]:
     """Helper to process all versions of a project and return results."""
     if selection is None:
         selection = default_selection()
+    if precision is None:
+        precision = DEFAULT_PRECISION
     dataset_root = fm.get_project_path(dataset_name, project_name)
     if not dataset_root:
         return None
@@ -115,7 +127,7 @@ def process_project(dataset_name: str, project_name: str, selection: Optional[Se
     versions = sorted([d for d in os.listdir(dataset_root) if os.path.isdir(os.path.join(dataset_root, d))], key=natural_sort_key)
 
     # Using ProcessPoolExecutor to parallelize version processing
-    version_args = [(os.path.join(dataset_root, v), v, selection) for v in versions]
+    version_args = [(os.path.join(dataset_root, v), v, selection, precision) for v in versions]
     results = {}
     
     with ProcessPoolExecutor() as executor:
@@ -128,16 +140,19 @@ def process_project(dataset_name: str, project_name: str, selection: Optional[Se
 def run_version_cmd(dataset: str, project: str, version: str,
                    examscore: bool = False, scores: bool = False,
                    info: bool = False, output: Optional[str] = None,
-                   selection: Optional[Selection] = None) -> bool:
+                   selection: Optional[Selection] = None,
+                   precision: Optional[Precision] = None) -> bool:
     """Runs the version service. Shared by the CLI and the interactive TUI."""
     if selection is None:
         selection = default_selection()
+    if precision is None:
+        precision = DEFAULT_PRECISION
     dataset_root = fm.get_project_path(dataset, project)
     if not dataset_root:
         logger.error(f"Project path not found for {dataset}/{project}")
         return False
     version_path = os.path.join(dataset_root, version)
-    results = process_version(version_path, selection=selection)
+    results = process_version(version_path, selection=selection, precision=precision)
     if results is None:
         logger.error(f"Could not process version {version} of {dataset}/{project}")
         return False
@@ -146,18 +161,21 @@ def run_version_cmd(dataset: str, project: str, version: str,
         return False
     with capture_to_csv(output):
         if info: print_version_info(version, results)
-        if examscore: print_exam_scores(version, results, selection=selection)
-        if scores: print_instruction_scores_table(version, results)
+        if examscore: print_exam_scores(version, results, selection=selection, decimals=precision.version)
+        if scores: print_instruction_scores_table(version, results, decimals=precision.scores)
     return True
 
 def run_project_cmd(dataset: str, project: str,
                     examscore: bool = False, overall: bool = False,
                     info: bool = False, output: Optional[str] = None,
-                    selection: Optional[Selection] = None) -> bool:
+                    selection: Optional[Selection] = None,
+                    precision: Optional[Precision] = None) -> bool:
     """Runs the project service. Shared by the CLI and the interactive TUI."""
     if selection is None:
         selection = default_selection()
-    results = process_project(dataset, project, selection=selection)
+    if precision is None:
+        precision = DEFAULT_PRECISION
+    results = process_project(dataset, project, selection=selection, precision=precision)
     if not results:
         logger.error(f"Project {project} not found or has no versions.")
         return False
@@ -166,17 +184,20 @@ def run_project_cmd(dataset: str, project: str,
         return False
     with capture_to_csv(output):
         if info: print_project_info(project, results)
-        if examscore: print_project_exam_summary(project, results, selection=selection)
-        if overall: print_overall_exam_scores(project, results, selection=selection)
+        if examscore: print_project_exam_summary(project, results, selection=selection, decimals=precision.program)
+        if overall: print_overall_exam_scores(project, results, selection=selection, decimals=precision.program)
     return True
 
 def run_dataset_cmd(dataset: str,
                     overall: bool = False, info: bool = False,
                     output: Optional[str] = None,
-                    selection: Optional[Selection] = None) -> bool:
+                    selection: Optional[Selection] = None,
+                    precision: Optional[Precision] = None) -> bool:
     """Runs the dataset service. Shared by the CLI and the interactive TUI."""
     if selection is None:
         selection = default_selection()
+    if precision is None:
+        precision = DEFAULT_PRECISION
     dataset_name = dataset.lower()
     if dataset_name not in fm.CONFIG:
         logger.error(f"Dataset {dataset_name} not found in config.")
@@ -193,10 +214,11 @@ def run_dataset_cmd(dataset: str,
 
     for project in projects:
         logger.info(f"Processing project {project}...")
-        results = process_project(dataset_name, project, selection=selection)
+        results = process_project(dataset_name, project, selection=selection, precision=precision)
         if results:
             if overall:
-                avg_map, _ = calculate_overall_averages(results, selection=selection)
+                avg_map, _ = calculate_overall_averages(results, selection=selection,
+                                                        decimals=precision.program)
                 project_averages[project] = avg_map
             if info:
                 dataset_results[project] = results
@@ -206,9 +228,11 @@ def run_dataset_cmd(dataset: str,
         if info:
             print_dataset_info(dataset_name, dataset_results)
         if overall:
-            print_dataset_overall_summary(dataset_name, project_averages, selection=selection)
+            print_dataset_overall_summary(dataset_name, project_averages, selection=selection,
+                                          decimals=precision.overall)
             try:
-                export_dataset_overall(output, dataset_name, project_averages, selection=selection)
+                export_dataset_overall(output, dataset_name, project_averages, selection=selection,
+                                       decimals=precision.overall)
                 print(f"Exported results to {output}")
             except Exception as e:
                 logger.error(f"Error exporting to Excel: {e}")
@@ -219,7 +243,8 @@ def run_dataset_cmd(dataset: str,
         if info:
             print_dataset_info(dataset_name, dataset_results)
         if overall:
-            print_dataset_overall_summary(dataset_name, project_averages, selection=selection)
+            print_dataset_overall_summary(dataset_name, project_averages, selection=selection,
+                                          decimals=precision.overall)
     return True
 
 def _selection_from_args(parser, args) -> Selection:
@@ -230,6 +255,34 @@ def _selection_from_args(parser, args) -> Selection:
                          evals=parse_evals(args.evals))
     except ValueError as e:
         parser.error(str(e))
+
+def _precision_from_args(parser, args) -> Precision:
+    """Builds a Precision from --precision/--*-precision (exits if invalid)."""
+    from scores_services.rounding import resolve_precision
+    try:
+        return resolve_precision(args.precision, args.score_precision,
+                                 args.version_precision, args.program_precision,
+                                 args.overall_precision)
+    except ValueError as e:
+        parser.error(str(e))
+
+def _add_selection_args(subparser):
+    subparser.add_argument("--metrics",
+                           help="Comma-separated score metrics "
+                                "(default: all). E.g. --metrics tar,och,jac")
+    subparser.add_argument("--evals",
+                           help="Comma-separated evaluations "
+                                "(default: all). E.g. --evals oexam,pexam")
+    subparser.add_argument("--precision", type=int, default=None,
+                           help="Decimals for all phases (default: 2)")
+    subparser.add_argument("--score-precision", type=int, default=None,
+                           help="Decimals for instruction scores (overrides --precision)")
+    subparser.add_argument("--version-precision", type=int, default=None,
+                           help="Decimals for version EXAM values (overrides --precision)")
+    subparser.add_argument("--program-precision", type=int, default=None,
+                           help="Decimals for project averages (overrides --precision)")
+    subparser.add_argument("--overall-precision", type=int, default=None,
+                           help="Decimals for dataset overall averages (overrides --precision)")
 
 def main():
     setup_logging()
@@ -242,12 +295,7 @@ def main():
     version_parser.add_argument("-examscore", action="store_true")
     version_parser.add_argument("-scores", action="store_true")
     version_parser.add_argument("-info", action="store_true")
-    version_parser.add_argument("--metrics",
-                                help="Comma-separated score metrics "
-                                     "(default: all). E.g. --metrics tar,och,jac")
-    version_parser.add_argument("--evals",
-                                help="Comma-separated evaluations "
-                                     "(default: all). E.g. --evals oexam,pexam")
+    _add_selection_args(version_parser)
     version_parser.add_argument("-o", "--output", help="Export output to a CSV file (.csv)")
     version_parser.add_argument("dataset")
     version_parser.add_argument("project")
@@ -258,12 +306,7 @@ def main():
     project_parser.add_argument("-examscore", action="store_true")
     project_parser.add_argument("-overall", action="store_true")
     project_parser.add_argument("-info", action="store_true")
-    project_parser.add_argument("--metrics",
-                                help="Comma-separated score metrics "
-                                     "(default: all). E.g. --metrics tar,och,jac")
-    project_parser.add_argument("--evals",
-                                help="Comma-separated evaluations "
-                                     "(default: all). E.g. --evals oexam,pexam")
+    _add_selection_args(project_parser)
     project_parser.add_argument("-o", "--output", help="Export output to a CSV file (.csv)")
     project_parser.add_argument("dataset")
     project_parser.add_argument("project")
@@ -272,12 +315,7 @@ def main():
     dataset_parser = subparsers.add_parser("dataset")
     dataset_parser.add_argument("-overall", action="store_true")
     dataset_parser.add_argument("-info", action="store_true")
-    dataset_parser.add_argument("--metrics",
-                                help="Comma-separated score metrics "
-                                     "(default: all). E.g. --metrics tar,och,jac")
-    dataset_parser.add_argument("--evals",
-                                help="Comma-separated evaluations "
-                                     "(default: all). E.g. --evals oexam,pexam")
+    _add_selection_args(dataset_parser)
     dataset_parser.add_argument("-o", "--output",
                                 help="Export output (.csv for console tables, "
                                      ".xlsx for the formatted dataset overall workbook)")
@@ -311,18 +349,21 @@ def main():
         run_version_cmd(args.dataset, args.project, args.version,
                         examscore=args.examscore, scores=args.scores,
                         info=args.info, output=args.output,
-                        selection=_selection_from_args(parser, args))
+                        selection=_selection_from_args(parser, args),
+                        precision=_precision_from_args(parser, args))
 
     elif args.service == "project":
         run_project_cmd(args.dataset, args.project,
                         examscore=args.examscore, overall=args.overall,
                         info=args.info, output=args.output,
-                        selection=_selection_from_args(parser, args))
+                        selection=_selection_from_args(parser, args),
+                        precision=_precision_from_args(parser, args))
 
     elif args.service == "dataset":
         run_dataset_cmd(args.dataset, overall=args.overall,
                         info=args.info, output=args.output,
-                        selection=_selection_from_args(parser, args))
+                        selection=_selection_from_args(parser, args),
+                        precision=_precision_from_args(parser, args))
 
 if __name__ == "__main__":
     main()

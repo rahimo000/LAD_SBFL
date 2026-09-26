@@ -91,14 +91,26 @@ to select everything):
   `oexam` and `pexam` are both selected. Exam-only example:
   `python main.py project -overall --evals oexam,pexam,lex-exam,rev-exam issta13 eventbus`.
 
+### Decimal precision (global or per phase)
+
+Rounding applies in the actual calculation at each phase, and each table
+shows its phase precision:
+
+- `--precision N` sets decimals (0-10, default: 2) for all phases, including
+  every metric formula (`gp13` follows the same rounding as the others).
+- Per-phase overrides: `--score-precision` (instruction scores),
+  `--version-precision` (per-version EXAM values), `--program-precision`
+  (project averages), `--overall-precision` (dataset overall + Excel).
+  Example: `python main.py version -scores --precision 4 issta13 eventbus v1`.
+
 ### Excel export
 
 - `-o` routes by extension: `.csv` captures the console tables (all services),
   while `.xlsx` writes a formatted workbook — supported for
   `dataset -overall` only. The workbook highlights the winner cell(s) in every
   row (lowest EXAM, highest Top-K) and adds a bar chart below the table with
-  one series per selected evaluation (TOTAL averages; `deltaexam` is
-  table-only). Note: Top-K averages are 0-100 scaled counts while EXAM is a
+  one series per selected evaluation (TOTAL averages, `deltaexam` included).
+  Note: Top-K averages are 0-100 scaled counts while EXAM is a
   percentage, so mixed selections share one axis:
   `python main.py dataset -overall issta13 -o results.xlsx`.
 

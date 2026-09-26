@@ -30,8 +30,8 @@ _BASE_FUNCS = {
     'amp': ample,
 }
 
-def calculate_all_metrics(p: np.ndarray, n: np.ndarray, metrics=None) -> tuple:
-    """Computes the selected metrics (default: all) while preserving exact rounding.
+def calculate_all_metrics(p: np.ndarray, n: np.ndarray, metrics=None, decimals: int = 2) -> tuple:
+    """Computes the selected metrics (default: all) with the given score precision.
 
     Aggregators (mj/apv) are computed over the *selected* base subset only.
     Returns (score_matrix, keys) where keys are in canonical order.
@@ -48,7 +48,7 @@ def calculate_all_metrics(p: np.ndarray, n: np.ndarray, metrics=None) -> tuple:
     # 1. Standard Metrics (only the selected ones are computed)
     for key, func in _BASE_FUNCS.items():
         if key in key_to_idx:
-            score_matrix[:, key_to_idx[key]] = func(p, n)
+            score_matrix[:, key_to_idx[key]] = func(p, n, decimals=decimals)
 
     # 2. Aggregators over the selected base subset
     active_indices = [key_to_idx[k] for k in _BASE_FUNCS if k in key_to_idx]

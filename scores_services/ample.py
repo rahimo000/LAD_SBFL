@@ -3,8 +3,8 @@ import numpy as np
 from .rounding import format_scores
 
 
-def ample(p, n):
-    """Vectorized Ample with exact rounding (2 decimals).
+def ample(p, n, decimals=2):
+    """Vectorized Ample with exact rounding (configurable decimals).
 
     Ample = | ef / (ef + nf) - ep / (ep + np_) |.
     Already bounded in [0, 1]; 0/0 terms are treated as 0.
@@ -19,4 +19,4 @@ def ample(p, n):
         pass_rate = p_e / total_p
         scores = np.abs(fail_rate - pass_rate)
 
-    return format_scores(np.nan_to_num(scores, nan=0.0, posinf=1.0, neginf=0.0), 2)
+    return format_scores(np.nan_to_num(scores, nan=0.0, posinf=1.0, neginf=0.0), decimals)

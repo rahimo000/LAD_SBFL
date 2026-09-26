@@ -1,5 +1,6 @@
 import scores_services as ss
 from typing import Dict, Optional, Tuple
+from scores_services.rounding import round_value
 from scores_services.selection import Selection, default_selection, EVAL_RESULT_KEYS, EVAL_AVG_KEYS
 
 EXAM_LABELS = {
@@ -15,10 +16,10 @@ def _resolve(selection: Optional[Selection]) -> Selection:
     return selection if selection is not None else default_selection()
 
 
-def print_project_exam_summary(project_name: str, all_results: Dict[str, dict], selection: Optional[Selection] = None):
+def print_project_exam_summary(project_name: str, all_results: Dict[str, dict], selection: Optional[Selection] = None, decimals: int = 2):
     """
     Prints a large consolidated EXAM and Top-K scores table for the project
-    (only selected metrics/evaluations).
+    (only selected metrics/evaluations, program-phase decimals).
     """
     selection = _resolve(selection)
     if not all_results: return
@@ -42,16 +43,19 @@ def print_project_exam_summary(project_name: str, all_results: Dict[str, dict], 
             rkey = EVAL_RESULT_KEYS[eval_key]
             vlabel = version if first else ""
             first = False
-            print(f"{vlabel:<{v_width}} | {EXAM_LABELS[eval_key]:<{c_width}} | " + " | ".join([f"{res.get(rkey, {}).get(m, 0.0)*100:<{m_width}.4f}" for m in metrics]))
+            print(f"{vlabel:<{v_width}} | {EXAM_LABELS[eval_key]:<{c_width}} | " + " | ".join([f"{res.get(rkey, {}).get(m, 0.0)*100:<{m_width}.{decimals}f}" for m in metrics]))
         if selection.show_delta:
-            print(f"{'':<{v_width}} | {DELTA_LABEL:<{c_width}} | " + " | ".join([f"{(res.get('worst', {}).get(m, 0.0)-res.get('best', {}).get(m, 0.0))*100:<{m_width}.4f}" for m in metrics]))
+            print(f"{'':<{v_width}} | {DELTA_LABEL:<{c_width}} | " + " | ".join([f"{(res.get('worst', {}).get(m, 0.0)-res.get('best', {}).get(m, 0.0))*100:<{m_width}.{decimals}f}" for m in metrics]))
 
         for key in selection.topk_evals:
             print(f"{'':<{v_width}} | {key:<{c_width}} | " + " | ".join([f"{topk.get(key, {}).get(m, 0):<{m_width}}" for m in metrics]))
         print("-" * len(header))
 
-def calculate_overall_averages(all_results: Dict[str, dict], selection: Optional[Selection] = None) -> Tuple[Dict[str, Dict[str, float]], int]:
-    """Calculates average scores across all versions of a project (selected evaluations only)."""
+def calculate_overall_averages(all_results: Dict[str, dict], selection: Optional[Selection] = None, decimals: int = 2) -> Tuple[Dict[str, Dict[str, float]], int]:
+    """Calculates average scores across all versions of a project (selected evaluations only).
+
+    Each mean is rounded to the program-phase precision during calculation.
+    """
     selection = _resolve(selection)
     metrics = selection.metrics
     count = len(all_results)
@@ -69,11 +73,11 @@ def calculate_overall_averages(all_results: Dict[str, dict], selection: Optional
             for key in topk_keys:
                 totals[m][key] += topk.get(key, {}).get(m, 0)
 
-    # Create average map
-    avg_map = {m: {t: (totals[m][t] / count) for t in types} for m in metrics}
+    # Create average map (rounded to the program-phase precision)
+    avg_map = {m: {t: round_value(totals[m][t] / count, decimals) for t in types} for m in metrics}
     return avg_map, count
 
-def print_overall_exam_scores(project_name: str, all_results: Dict[str, dict], selection: Optional[Selection] = None):
+def print_overall_exam_scores(project_name: str, all_results: Dict[str, dict], selection: Optional[Selection] = None, decimals: int = 2):
     """Prints the overall average EXAM and Top-K scores (%) across all versions."""
     selection = _resolve(selection)
     if not all_results: return
@@ -88,9 +92,9 @@ def print_overall_exam_scores(project_name: str, all_results: Dict[str, dict], s
 
     def pr(label, key, is_delta=False):
         if is_delta:
-            row = [f"{(avg_map[m]['pexam'] - avg_map[m]['oexam']) * 100:<{m_width}.4f}" for m in metrics]
+            row = [f"{(avg_map[m]['pexam'] - avg_map[m]['oexam']) * 100:<{m_width}.{decimals}f}" for m in metrics]
         else:
-            row = [f"{avg_map[m][key] * 100:<{m_width}.4f}" for m in metrics]
+            row = [f"{avg_map[m][key] * 100:<{m_width}.{decimals}f}" for m in metrics]
         print(f"{label:<{c_width}} | " + " | ".join(row))
 
     for eval_key in selection.exam_evals:
