@@ -3,8 +3,8 @@ import numpy as np
 from .rounding import format_scores
 
 
-def op2(p, n, decimals=2):
-    """Vectorized normalized Op2 with exact rounding (configurable decimals).
+def op2(p, n):
+    """Vectorized normalized Op2 with exact rounding (2 decimals).
 
     Raw Op2 = ef - ep / (ep + np_ + 1) ranges in (-1, total_f], so it is
     normalized into [0, 1] as: (raw + 1) / (total_f + 1).
@@ -19,4 +19,4 @@ def op2(p, n, decimals=2):
         raw = n_e - p_e / (p_e + np_ + 1)
         scores = (raw + 1) / (total_f + 1)
 
-    return format_scores(np.nan_to_num(scores, nan=0.0, posinf=1.0, neginf=0.0), decimals)
+    return format_scores(np.nan_to_num(scores, nan=0.0, posinf=1.0, neginf=0.0), 2)

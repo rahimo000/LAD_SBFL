@@ -14,7 +14,6 @@ from rich.console import Console
 
 import fileManagment as fm
 from main import natural_sort_key, run_dataset_cmd, run_project_cmd, run_version_cmd
-from scores_services.rounding import Precision, resolve_precision, validate_precision
 from scores_services.selection import (
     Selection,
     all_evals,
@@ -91,54 +90,16 @@ def _ask_selection() -> Selection:
             console.print(f"[red]{e} Pick again.[/red]")
 
 
-def _ask_precision() -> Precision:
-    """Global decimals prompt with optional per-phase overrides (blank = 2)."""
-    while True:
-        raw = questionary.text("Decimals for all phases? (0-10, blank = 2):").ask()
-        if raw is None:  # aborted with Ctrl+C
-            raise KeyboardInterrupt
-        raw = raw.strip()
-        try:
-            global_prec = 2 if not raw else validate_precision(raw, "precision")
-            break
-        except ValueError as e:
-            console.print(f"[red]{e}[/red]")
-    per_phase = questionary.confirm("Different decimals per phase?", default=False).ask()
-    if per_phase is None:
-        raise KeyboardInterrupt
-    if not per_phase:
-        return resolve_precision(global_prec)
-    phases = [("instruction scores", "score"), ("version values", "version"),
-              ("project averages", "program"), ("dataset overall", "overall")]
-    overrides = {}
-    for label, key in phases:
-        while True:
-            raw = questionary.text(f"Decimals for {label}? (blank = {global_prec}):").ask()
-            if raw is None:
-                raise KeyboardInterrupt
-            raw = raw.strip()
-            try:
-                overrides[key] = global_prec if not raw else validate_precision(raw, label)
-                break
-            except ValueError as e:
-                console.print(f"[red]{e}[/red]")
-    return Precision(**overrides)
-
-
 def build_command(service: str, flags: Dict[str, bool], dataset: str,
                   project: Optional[str] = None, version: Optional[str] = None,
                   output: Optional[str] = None,
-                  selection: Optional[Selection] = None,
-                  precision: Optional[Precision] = None) -> str:
+                  selection: Optional[Selection] = None) -> str:
     """Builds the equivalent CLI command string for preview (pure function)."""
     parts = ["python main.py", service]
     parts += [f"-{name}" for name, enabled in flags.items() if enabled]
     if selection is None:
         selection = default_selection()
     parts += selection.cli_flags()
-    if precision is None:
-        precision = Precision()
-    parts += precision.cli_flags()
     parts.append(dataset)
     if project:
         parts.append(project)
@@ -188,13 +149,12 @@ def _version_flow(dataset: str, project: str) -> None:
             if flags is not None:
                 break
         selection = _ask_selection()
-        precision = _ask_precision()
         output = _ask_output()
-        cmd = build_command("version", flags, dataset, project, version, output, selection, precision)
+        cmd = build_command("version", flags, dataset, project, version, output, selection)
         _confirm_and_run(cmd, lambda: run_version_cmd(
             dataset, project, version, examscore=flags["examscore"],
             scores=flags["scores"], info=flags["info"], output=output,
-            selection=selection, precision=precision))
+            selection=selection))
 
 
 def _project_flow(dataset: str) -> None:
@@ -220,13 +180,12 @@ def _project_flow(dataset: str) -> None:
                     if flags is not None:
                         break
                 selection = _ask_selection()
-                precision = _ask_precision()
                 output = _ask_output()
-                cmd = build_command("project", flags, dataset, project, None, output, selection, precision)
+                cmd = build_command("project", flags, dataset, project, None, output, selection)
                 _confirm_and_run(cmd, lambda: run_project_cmd(
                     dataset, project, examscore=flags["examscore"],
                     overall=flags["overall"], info=flags["info"], output=output,
-                    selection=selection, precision=precision))
+                    selection=selection))
 
 
 def _dataset_flow() -> None:
@@ -254,13 +213,11 @@ def _dataset_flow() -> None:
                     if flags is not None:
                         break
                 selection = _ask_selection()
-                precision = _ask_precision()
                 output = _ask_output(excel_hint=flags["overall"])
-                cmd = build_command("dataset", flags, dataset, None, None, output, selection, precision)
+                cmd = build_command("dataset", flags, dataset, None, None, output, selection)
                 _confirm_and_run(cmd, lambda: run_dataset_cmd(
                     dataset, overall=flags["overall"],
-                    info=flags["info"], output=output, selection=selection,
-                    precision=precision))
+                    info=flags["info"], output=output, selection=selection))
 
 
 def run_tui() -> None:

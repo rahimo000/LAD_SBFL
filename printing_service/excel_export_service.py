@@ -19,8 +19,7 @@ WINNER_FILL = "#C6EFCE"  # light green
 
 def export_dataset_overall(output_path: str, dataset_name: str,
                             project_averages: Dict[str, Dict[str, Dict[str, float]]],
-                            selection: Optional[Selection] = None,
-                            decimals: int = 2) -> str:
+                            selection: Optional[Selection] = None) -> str:
     """Writes the dataset overall workbook. Returns the output path."""
     import xlsxwriter
 
@@ -30,19 +29,17 @@ def export_dataset_overall(output_path: str, dataset_name: str,
     all_types = selection_rows(selection)
     topk_labels = set(selection.topk_evals)
     projects = sorted(project_averages.keys())
-    grand_avg = calculate_grand_average(project_averages, all_types, decimals=decimals)
-
-    num_fmt_str = '0' if decimals == 0 else '0.' + '0' * decimals
+    grand_avg = calculate_grand_average(project_averages, all_types)
 
     workbook = xlsxwriter.Workbook(output_path)
     ws = workbook.add_worksheet("Overall")
 
     header_fmt = workbook.add_format({'bold': True, 'bg_color': '#1F4E78', 'font_color': 'white'})
     total_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2'})
-    total_num_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2', 'num_format': num_fmt_str})
-    num_fmt = workbook.add_format({'num_format': num_fmt_str})
-    winner_fmt = workbook.add_format({'bg_color': WINNER_FILL, 'num_format': num_fmt_str})
-    total_winner_fmt = workbook.add_format({'bold': True, 'bg_color': WINNER_FILL, 'num_format': num_fmt_str})
+    total_num_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2', 'num_format': '0.0000'})
+    num_fmt = workbook.add_format({'num_format': '0.0000'})
+    winner_fmt = workbook.add_format({'bg_color': WINNER_FILL, 'num_format': '0.0000'})
+    total_winner_fmt = workbook.add_format({'bold': True, 'bg_color': WINNER_FILL, 'num_format': '0.0000'})
 
     # Header
     ws.write_row(0, 0, ["Project", "Type"] + metrics, header_fmt)
@@ -87,6 +84,8 @@ def export_dataset_overall(output_path: str, dataset_name: str,
     first_data_col = 2  # 0-based: 'C'
     last_data_col = 1 + len(metrics)
     for label, _key in all_types:
+        if label == 'deltaexam':
+            continue  # derived spread, table-only
         excel_row = total_row_of_label[label]
         chart.add_series({
             'name': label,

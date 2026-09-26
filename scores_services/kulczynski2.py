@@ -3,8 +3,8 @@ import numpy as np
 from .rounding import format_scores
 
 
-def kulczynski2(p, n, decimals=2):
-    """Vectorized Kulczynski2 with exact rounding (configurable decimals).
+def kulczynski2(p, n):
+    """Vectorized Kulczynski2 with exact rounding (2 decimals).
 
     Kulczynski2 = (1/2) * [ ef / (ef + nf) + ef / (ef + ep) ].
     Already bounded in [0, 1]; 0/0 terms are treated as 0.
@@ -18,4 +18,4 @@ def kulczynski2(p, n, decimals=2):
         precision = n_e / (n_e + p_e)
         scores = 0.5 * (recall_f + precision)
 
-    return format_scores(np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0), decimals)
+    return format_scores(np.nan_to_num(scores, nan=0.0, posinf=0.0, neginf=0.0), 2)

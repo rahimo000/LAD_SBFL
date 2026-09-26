@@ -10,10 +10,10 @@ EXAM_COLUMNS = {
 }
 DELTA_COLUMN = 'delta (%)'
 
-def print_exam_scores(version_name: str, results: dict, selection: Optional[Selection] = None, decimals: int = 2):
+def print_exam_scores(version_name: str, results: dict, selection: Optional[Selection] = None):
     """
     Prints the EXAM scores (%) and Top-K results for a specific version
-    (only selected metrics/evaluations, version-phase decimals).
+    (only selected metrics/evaluations).
     """
     if selection is None:
         selection = default_selection()
@@ -40,15 +40,15 @@ def print_exam_scores(version_name: str, results: dict, selection: Optional[Sele
         vals = {rkey: data.get(metric, 0.0) * 100 for rkey, data in exam_data.items()}
         line = f"{metric:<10}"
         for eval_key in selection.exam_evals:
-            line += f" | {vals[EVAL_RESULT_KEYS[eval_key]]:<12.{decimals}f}"
+            line += f" | {vals[EVAL_RESULT_KEYS[eval_key]]:<12.4f}"
         if selection.show_delta:
             delta = vals.get('worst', 0.0) - vals.get('best', 0.0)
-            line += f" | {delta:<10.{decimals}f}"
+            line += f" | {delta:<10.4f}"
         for key in selection.topk_evals:
             line += f" | {str(topk.get(key, {}).get(metric, 0)):<4}"
         print(line)
 
-def print_instruction_scores_table(version_name: str, results: dict, decimals: int = 2):
+def print_instruction_scores_table(version_name: str, results: dict):
     """Prints detailed scores for each instruction from the score_matrix."""
     score_matrix = results.get('score_matrix')
     metric_keys = results.get('metric_keys')
@@ -64,6 +64,6 @@ def print_instruction_scores_table(version_name: str, results: dict, decimals: i
     for i in range(score_matrix.shape[0]):
         is_fault = (i == fault_index)
         scores = score_matrix[i, :]
-        line = f"{i:<8} | " + " | ".join([f"{s:<8.{decimals}f}" for s in scores])
+        line = f"{i:<8} | " + " | ".join([f"{s:<8.4f}" for s in scores])
         if is_fault: print(f"{line}  <-- FAULTY")
         else: print(line)
