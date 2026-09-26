@@ -97,8 +97,8 @@ to select everything):
   while `.xlsx` writes a formatted workbook — supported for
   `dataset -overall` only. The workbook highlights the winner cell(s) in every
   row (lowest EXAM, highest Top-K) and adds a bar chart below the table with
-  one series per selected evaluation (TOTAL averages; `deltaexam` is
-  table-only). Note: Top-K averages are 0-100 scaled counts while EXAM is a
+  one series per selected evaluation (TOTAL averages, `deltaexam` included).
+  Note: Top-K averages are 0-100 scaled counts while EXAM is a
   percentage, so mixed selections share one axis:
   `python main.py dataset -overall issta13 -o results.xlsx`.
 

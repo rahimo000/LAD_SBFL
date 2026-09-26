@@ -84,8 +84,6 @@ def export_dataset_overall(output_path: str, dataset_name: str,
     first_data_col = 2  # 0-based: 'C'
     last_data_col = 1 + len(metrics)
     for label, _key in all_types:
-        if label == 'deltaexam':
-            continue  # derived spread, table-only
         excel_row = total_row_of_label[label]
         chart.add_series({
             'name': label,

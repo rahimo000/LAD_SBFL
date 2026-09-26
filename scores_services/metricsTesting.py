@@ -257,14 +257,14 @@ class TestExcelExport(unittest.TestCase):
     def test_export_all(self):
         from scores_services.selection import default_selection
         sel = default_selection()
-        expected = ['oexam', 'pexam', 'lex-exam', 'rev-exam',
+        expected = ['oexam', 'pexam', 'lex-exam', 'rev-exam', 'deltaexam',
                     'l-Top1', 'l-Top3', 'l-Top5', 'r-Top1', 'r-Top3', 'r-Top5']
         self._export_and_check(sel, expected)
 
     def test_export_subset(self):
         from scores_services.selection import Selection
         sel = Selection(metrics=['tar', 'och', 'jac'], evals=['oexam', 'pexam'])
-        self._export_and_check(sel, ['oexam', 'pexam'])
+        self._export_and_check(sel, ['oexam', 'pexam', 'deltaexam'])
 
 
 if __name__ == '__main__':
