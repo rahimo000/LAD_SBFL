@@ -8,6 +8,8 @@ from .op2 import op2
 from .kulczynski2 import kulczynski2
 from .zoltar import zoltar
 from .ample import ample
+from .dstar import dstar
+from .topkscore import topkscore
 
 # Central registry of active SBFL metrics
 # Format: (key, function, display_name)
@@ -20,13 +22,15 @@ ACTIVE_METRICS = [
     ('kul2', kulczynski2, 'Kulczynski2'),
     ('zol', zoltar, 'Zoltar'),
     ('amp', ample, 'Ample'),
+    ('dst', dstar, 'DStar'),
+    ('tks', topkscore, 'TopKScore'),
 ]
 
 _METRIC_BY_KEY = {key: func for key, func, _ in ACTIVE_METRICS}
 
 def get_all_metric_keys():
     """Returns a list of all active and aggregate metric keys in the preferred order."""
-    return ['tar', 'och', 'jac', 'gp', 'op2', 'kul2', 'zol', 'amp', 'mj', 'apv']
+    return ['tar', 'och', 'jac', 'gp', 'op2', 'kul2', 'zol', 'amp', 'dst', 'tks', 'mj', 'apv']
 
 def get_metric_function(key):
     """Returns the scoring function for a base metric key (None for aggregators)."""

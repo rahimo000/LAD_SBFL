@@ -61,11 +61,28 @@ class TestMetrics(unittest.TestCase):
         self.assertAlmostEqual(ms.op2(self.p, self.n)[0], 0.9)
         self.assertAlmostEqual(ms.kulczynski2(self.p, self.n)[0], 0.88)
         self.assertAlmostEqual(ms.ample(self.p, self.n)[0], 0.0)
+        # DStar (n=2) and TopKScore on the same fixture
+        self.assertEqual(ms.dstar(self.p, self.n)[2], 1.0)
+        self.assertEqual(ms.topkscore(self.p, self.n)[2], 1.0)
+        # Column 0: dstar=36/2=18 -> 18/19=0.95; tks=(6-2/3+1)/7=0.9
+        self.assertAlmostEqual(ms.dstar(self.p, self.n)[0], 0.95)
+        self.assertAlmostEqual(ms.topkscore(self.p, self.n)[0], 0.9)
+
+    # --- DStar / TopKScore edges ----------------------------------------------
+    def test_dstar_topkscore_edges(self):
+        p = np.zeros((2, 3), dtype=np.int8)
+        n = np.zeros((3, 3), dtype=np.int8)
+        # denom == 0 and ef == 0 -> dstar 0.0; tks -> (0-0+1)/4 = 0.25
+        self.assertTrue(np.all(ms.dstar(p, n) == 0.0))
+        self.assertTrue(np.all(ms.topkscore(p, n) == 0.25))
+        # ef == 0 with ep > 0 covered only by passing tests -> dstar 0.0
+        p2 = np.ones((2, 3), dtype=np.int8)
+        self.assertTrue(np.all(ms.dstar(p2, n) == 0.0))
 
     # --- New metrics: always bounded in [0, 1] -----------------------------
     def test_new_metrics_bounded(self):
         rng = np.random.default_rng(42)
-        for func in (ms.op2, ms.kulczynski2, ms.zoltar, ms.ample):
+        for func in (ms.op2, ms.kulczynski2, ms.zoltar, ms.ample, ms.dstar, ms.topkscore):
             # Fixture, all-zero coverage, all-covered, and fuzz matrices
             cases = [
                 (self.p, self.n),
@@ -108,11 +125,14 @@ class TestMetrics(unittest.TestCase):
         kul2_mod = importlib.import_module('scores_services.kulczynski2')
         zoltar_mod = importlib.import_module('scores_services.zoltar')
         ample_mod = importlib.import_module('scores_services.ample')
+        dstar_mod = importlib.import_module('scores_services.dstar')
+        tks_mod = importlib.import_module('scores_services.topkscore')
         pairs = [
             (ms.Tarontula, tar_mod.Tarontula), (ms.ochiai, ochiai_mod.ochiai),
             (ms.jaccard, jaccard_mod.jaccard), (ms.gp13, gp13_mod.gp13),
             (ms.op2, op2_mod.op2), (ms.kulczynski2, kul2_mod.kulczynski2),
             (ms.zoltar, zoltar_mod.zoltar), (ms.ample, ample_mod.ample),
+            (ms.dstar, dstar_mod.dstar), (ms.topkscore, tks_mod.topkscore),
         ]
         for via_service, via_module in pairs:
             with self.subTest(func=via_module.__name__):
@@ -124,13 +144,13 @@ class TestMetrics(unittest.TestCase):
                 self.assertTrue(callable(func))
                 self.assertIs(func, ss.get_metric_function(key))
         self.assertEqual(ss.get_all_metric_keys(),
-                         ['tar', 'och', 'jac', 'gp', 'op2', 'kul2', 'zol', 'amp', 'mj', 'apv'])
+                         ['tar', 'och', 'jac', 'gp', 'op2', 'kul2', 'zol', 'amp', 'dst', 'tks', 'mj', 'apv'])
 
     # --- Orchestration ------------------------------------------------------
     def test_calculate_all_metrics_shape_and_keys(self):
         matrix, keys = calculate_all_metrics(self.p, self.n)
         self.assertEqual(keys, ss.get_all_metric_keys())
-        self.assertEqual(matrix.shape, (10, 10))
+        self.assertEqual(matrix.shape, (10, 12))
         idx = {k: i for i, k in enumerate(keys)}
         self.assertTrue(np.allclose(matrix[:, idx['och']], ms.ochiai(self.p, self.n)))
         self.assertTrue(np.allclose(matrix[:, idx['zol']], ms.zoltar(self.p, self.n)))

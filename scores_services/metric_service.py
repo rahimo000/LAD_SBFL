@@ -12,10 +12,13 @@ from .op2 import op2
 from .kulczynski2 import kulczynski2
 from .zoltar import zoltar
 from .ample import ample
+from .dstar import dstar
+from .topkscore import topkscore
 
 __all__ = [
     'Tarontula', 'ochiai', 'jaccard', 'gp13',
     'op2', 'kulczynski2', 'zoltar', 'ample',
+    'dstar', 'topkscore',
     'calculate_all_metrics',
 ]
 
@@ -28,6 +31,8 @@ _BASE_FUNCS = {
     'kul2': kulczynski2,
     'zol': zoltar,
     'amp': ample,
+    'dst': dstar,
+    'tks': topkscore,
 }
 
 def calculate_all_metrics(p: np.ndarray, n: np.ndarray, metrics=None) -> tuple:

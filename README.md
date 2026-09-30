@@ -121,8 +121,10 @@ The tool maintains a strict metric ordering for all reports:
 6. **kul2** (Kulczynski2)
 7. **zol** (Zoltar)
 8. **amp** (Ample)
-9. **mj** (Majority Judgment)
-10. **apv** (Approval Voting)
+9. **dst** (DStar, exponent 2)
+10. **tks** (TopKScore)
+11. **mj** (Majority Judgment)
+12. **apv** (Approval Voting)
 
 ## Testing
 To verify the evaluation logic, run the included unit tests:
