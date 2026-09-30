@@ -20,8 +20,11 @@ WINNER_FILL = "#C6EFCE"  # light green
 def export_dataset_overall(output_path: str, dataset_name: str,
                             project_averages: Dict[str, Dict[str, Dict[str, float]]],
                             selection: Optional[Selection] = None) -> str:
-    """Writes the dataset overall workbook. Returns the output path."""
+    """Writes the dataset overall workbook (always under output/). Returns the resolved path."""
     import xlsxwriter
+
+    import fileManagment as fm
+    output_path = fm.prepare_export_path(output_path)
 
     if selection is None:
         selection = default_selection()

@@ -48,15 +48,28 @@ def _ask_flags(message: str, options: List[str]) -> Optional[Dict[str, bool]]:
     return {opt: (opt in selected) for opt in options}
 
 
-def _ask_output(excel_hint: bool = False) -> Optional[str]:
-    """Optional export path. None means console only."""
+def default_export_name(service: str, dataset: str,
+                          project: Optional[str] = None, version: Optional[str] = None,
+                          excel: bool = False) -> str:
+    """Suggested export path (pure function). Everything lands under output/."""
+    ext = "xlsx" if excel else "csv"
+    if service == "version":
+        return f"output/{dataset}/{project}_{version}.{ext}"
+    if service == "project":
+        return f"output/{dataset}/{project}.{ext}"
+    return f"output/{dataset}/overall.{ext}"
+
+
+def _ask_output(excel_hint: bool = False, default: str = "") -> Optional[str]:
+    """Optional export path (always saved under output/). None means console only."""
     export = questionary.confirm("Export the output?", default=False).ask()
     if export is None:  # aborted with Ctrl+C
         raise KeyboardInterrupt
     if not export:
         return None
     hint = ".csv, or .xlsx for a formatted dataset-overall workbook" if excel_hint else ".csv"
-    path = questionary.text(f"Export file path ({hint}, empty = console only):").ask()
+    path = questionary.text(f"Export file path ({hint}, empty = console only):",
+                            default=default).ask()
     if path is None:  # aborted with Ctrl+C
         raise KeyboardInterrupt
     if not path.strip():
@@ -149,7 +162,7 @@ def _version_flow(dataset: str, project: str) -> None:
             if flags is not None:
                 break
         selection = _ask_selection()
-        output = _ask_output()
+        output = _ask_output(default=default_export_name("version", dataset, project, version))
         cmd = build_command("version", flags, dataset, project, version, output, selection)
         _confirm_and_run(cmd, lambda: run_version_cmd(
             dataset, project, version, examscore=flags["examscore"],
@@ -180,7 +193,7 @@ def _project_flow(dataset: str) -> None:
                     if flags is not None:
                         break
                 selection = _ask_selection()
-                output = _ask_output()
+                output = _ask_output(default=default_export_name("project", dataset, project))
                 cmd = build_command("project", flags, dataset, project, None, output, selection)
                 _confirm_and_run(cmd, lambda: run_project_cmd(
                     dataset, project, examscore=flags["examscore"],
@@ -213,7 +226,9 @@ def _dataset_flow() -> None:
                     if flags is not None:
                         break
                 selection = _ask_selection()
-                output = _ask_output(excel_hint=flags["overall"])
+                output = _ask_output(excel_hint=flags["overall"],
+                                     default=default_export_name("dataset", dataset,
+                                                                 excel=flags["overall"]))
                 cmd = build_command("dataset", flags, dataset, None, None, output, selection)
                 _confirm_and_run(cmd, lambda: run_dataset_cmd(
                     dataset, overall=flags["overall"],

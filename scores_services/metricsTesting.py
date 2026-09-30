@@ -237,11 +237,13 @@ class TestExcelExport(unittest.TestCase):
 
     def _export_and_check(self, selection, expected_series):
         import re
+        from unittest import mock
         from printing_service.excel_export_service import export_dataset_overall
         with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "overall.xlsx")
-            export_dataset_overall(path, "fakeDS", self._fake_averages(),
-                                   selection=selection)
+            with mock.patch('fileManagment.output_dir', return_value=tmp):
+                path = export_dataset_overall("overall.xlsx", "fakeDS", self._fake_averages(),
+                                              selection=selection)
+            self.assertEqual(path, os.path.join(tmp, "overall.xlsx"))
             self.assertTrue(os.path.isfile(path))
             self.assertGreater(os.path.getsize(path), 0)
             with zipfile.ZipFile(path) as z:
@@ -265,6 +267,66 @@ class TestExcelExport(unittest.TestCase):
         from scores_services.selection import Selection
         sel = Selection(metrics=['tar', 'och', 'jac'], evals=['oexam', 'pexam'])
         self._export_and_check(sel, ['oexam', 'pexam', 'deltaexam'])
+
+
+class TestExportPaths(unittest.TestCase):
+
+    def test_bare_name_resolves_into_output(self):
+        from unittest import mock
+        import fileManagment as fm
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch('fileManagment.output_dir', return_value=tmp):
+                self.assertEqual(fm.prepare_export_path("quick.csv"),
+                                 os.path.join(tmp, "quick.csv"))
+
+    def test_nested_subpath_preserved_and_created(self):
+        from unittest import mock
+        import fileManagment as fm
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch('fileManagment.output_dir', return_value=tmp):
+                resolved = fm.prepare_export_path("issta/out.csv")
+                self.assertEqual(resolved, os.path.join(tmp, "issta", "out.csv"))
+                self.assertTrue(os.path.isdir(os.path.join(tmp, "issta")))
+
+    def test_traversal_and_absolute_paths_clamped(self):
+        from unittest import mock
+        import fileManagment as fm
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch('fileManagment.output_dir', return_value=tmp):
+                for evil in ("../evil.csv", "..\\evil.csv",
+                             os.path.join(tmp, "abs.csv"),
+                             "C:/abs/win.csv" if os.name == "nt" else "/abs/nix.csv"):
+                    resolved = fm.prepare_export_path(evil)
+                    self.assertEqual(os.path.commonpath([tmp, resolved]), tmp)
+                    self.assertTrue(resolved.endswith("evil.csv") or
+                                    resolved.endswith("abs.csv") or
+                                    resolved.endswith("win.csv") or
+                                    resolved.endswith("nix.csv"))
+
+    def test_invalid_path_rejected(self):
+        import fileManagment as fm
+        with self.assertRaises(ValueError):
+            fm.prepare_export_path("")
+
+    def test_csv_writer_lands_in_output(self):
+        from unittest import mock
+        from printing_service.csv_export_service import capture_to_csv
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch('fileManagment.output_dir', return_value=tmp):
+                with capture_to_csv("t/r.csv"):
+                    print("A | B")
+                self.assertTrue(os.path.isfile(os.path.join(tmp, "t", "r.csv")))
+
+    def test_default_export_names(self):
+        from tui import default_export_name
+        self.assertEqual(default_export_name("version", "issta13", "eventbus", "v1"),
+                         "output/issta13/eventbus_v1.csv")
+        self.assertEqual(default_export_name("project", "issta13", "eventbus"),
+                         "output/issta13/eventbus.csv")
+        self.assertEqual(default_export_name("dataset", "issta13", excel=True),
+                         "output/issta13/overall.xlsx")
+        self.assertEqual(default_export_name("dataset", "issta13", excel=False),
+                         "output/issta13/overall.csv")
 
 
 if __name__ == '__main__':

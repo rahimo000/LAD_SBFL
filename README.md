@@ -102,6 +102,13 @@ to select everything):
   percentage, so mixed selections share one axis:
   `python main.py dataset -overall issta13 -o results.xlsx`.
 
+### Exported files
+
+Every export is saved under the `output/` folder (auto-created), keeping any
+relative structure you type: `-o issta/out.csv` → `output/issta/out.csv`,
+`-o quick.csv` → `output/quick.csv`. Paths that would escape `output/`
+(absolute paths, `..`) are clamped inside it. The folder is git-ignored.
+
 ---
 
 ## SBFL Metrics & Ordering

@@ -208,8 +208,8 @@ def run_dataset_cmd(dataset: str,
         if overall:
             print_dataset_overall_summary(dataset_name, project_averages, selection=selection)
             try:
-                export_dataset_overall(output, dataset_name, project_averages, selection=selection)
-                print(f"Exported results to {output}")
+                real_path = export_dataset_overall(output, dataset_name, project_averages, selection=selection)
+                print(f"Exported results to {real_path}")
             except Exception as e:
                 logger.error(f"Error exporting to Excel: {e}")
                 return False
@@ -248,7 +248,7 @@ def main():
     version_parser.add_argument("--evals",
                                 help="Comma-separated evaluations "
                                      "(default: all). E.g. --evals oexam,pexam")
-    version_parser.add_argument("-o", "--output", help="Export output to a CSV file (.csv)")
+    version_parser.add_argument("-o", "--output", help="Export file (.csv), always saved under output/")
     version_parser.add_argument("dataset")
     version_parser.add_argument("project")
     version_parser.add_argument("version")
@@ -264,7 +264,7 @@ def main():
     project_parser.add_argument("--evals",
                                 help="Comma-separated evaluations "
                                      "(default: all). E.g. --evals oexam,pexam")
-    project_parser.add_argument("-o", "--output", help="Export output to a CSV file (.csv)")
+    project_parser.add_argument("-o", "--output", help="Export file (.csv), always saved under output/")
     project_parser.add_argument("dataset")
     project_parser.add_argument("project")
 
@@ -279,8 +279,9 @@ def main():
                                 help="Comma-separated evaluations "
                                      "(default: all). E.g. --evals oexam,pexam")
     dataset_parser.add_argument("-o", "--output",
-                                help="Export output (.csv for console tables, "
-                                     ".xlsx for the formatted dataset overall workbook)")
+                                help="Export path, always saved under output/ "
+                                     "(.csv for console tables, .xlsx for the formatted "
+                                     "dataset overall workbook)")
     dataset_parser.add_argument("dataset")
 
     args = parser.parse_args()

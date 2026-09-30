@@ -14,6 +14,32 @@ def load_config() -> Dict:
 
 CONFIG = load_config()
 
+OUTPUT_DIR_NAME = "output"
+
+def repo_root() -> str:
+    """Absolute path of the repository root (directory of this file)."""
+    return os.path.dirname(os.path.abspath(__file__))
+
+def output_dir() -> str:
+    """Absolute path of the folder all exports are written to."""
+    return os.path.join(repo_root(), OUTPUT_DIR_NAME)
+
+def prepare_export_path(user_path: str) -> str:
+    """Resolves a user-supplied export path to inside the output/ folder.
+
+    Relative structure is preserved ("issta/out.csv" -> "output/issta/out.csv").
+    Absolute paths and ".." segments are clamped so the result can never
+    escape output/. Missing directories are created.
+    """
+    cleaned = user_path.replace("\\", "/").strip()
+    _drive, tail = os.path.splitdrive(cleaned)
+    parts = [p for p in tail.split("/") if p not in ("", ".", "..")]
+    if not parts:
+        raise ValueError(f"Invalid export path: {user_path!r}")
+    resolved = os.path.join(output_dir(), *parts)
+    os.makedirs(os.path.dirname(resolved), exist_ok=True)
+    return resolved
+
 def get_project_path(dataset_name: str, project_name: str) -> Optional[str]:
     """Returns the full path to a project based on config.json."""
     ds_key = dataset_name.lower()

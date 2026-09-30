@@ -3,11 +3,13 @@ import sys
 import io
 from contextlib import contextmanager
 
+import fileManagment as fm
+
 @contextmanager
 def capture_to_csv(file_path):
     """
-    Captures stdout, parses the custom table format (using | as separator), 
-    and saves it to a proper CSV file.
+    Captures stdout, parses the custom table format (using | as separator),
+    and saves it to a proper CSV file under the output/ folder.
     """
     if not file_path:
         yield
@@ -28,9 +30,10 @@ def capture_to_csv(file_path):
         # Print to console as usual
         print(output)
         
-        # Save to CSV
+        # Save to CSV (always under output/)
         try:
-            with open(file_path, 'w', newline='') as f:
+            real_path = fm.prepare_export_path(file_path)
+            with open(real_path, 'w', newline='') as f:
                 writer = csv.writer(f)
                 lines = output.split('\n')
                 for line in lines:
@@ -44,6 +47,6 @@ def capture_to_csv(file_path):
                     row = [r for r in row if r]
                     if row:
                         writer.writerow(row)
-            print(f"Exported results to {file_path}")
+            print(f"Exported results to {real_path}")
         except Exception as e:
             print(f"Error exporting to CSV: {e}")
