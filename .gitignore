@@ -2,3 +2,4 @@
 *.md
 !README.md
 opencode.json
+output/
