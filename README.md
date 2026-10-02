@@ -79,13 +79,27 @@ Used to analyze every project within a dataset.
 | :--- | :--- | :--- |
 | `-overall` | Print a high-level summary of averages for every project in the dataset. | `python main.py dataset -overall issta13` |
 
+### 4. Optimize Service (MJ combination search)
+Tests every metric combination of size ≥ 3 to find the best Majority Judgment
+pool. For each combination, `mj`/`apv` are computed over that subset only,
+its dataset-overall report is exported under `output/combos/`, and a summary
+table records MJ's rank per evaluation (ties share a rank; lower EXAM wins,
+higher Top-K wins).
+
+| Command Option | Description | Example |
+| :--- | :--- | :--- |
+| `--metrics` | Base metrics to combine, at least 3 (default: all 10 base). | `python main.py optimize siemens --metrics tar,och,jac,gp --evals oexam,pexam,lex-exam` |
+| `--evals` | Evaluations to rank (default: all). |  |
+| `-f` | Per-combination report format: `xlsx` or `csv` (default: `xlsx`). |  |
+| `-o` | Summary table path under `output/` (`.csv`/`.xlsx` by extension, default `output/<dataset>/combos_summary.csv`). |  |
+
 ### Selecting score metrics & evaluations
 
 Calculation, tables, and the chart all follow your selection (omit a flag
 to select everything):
 
 - `--metrics tar,och,jac` limits the score metrics (any of `tar och jac gp
-  op2 kul2 zol amp mj apv`). `mj`/`apv` aggregate only the selected base metrics.
+  op2 kul2 zol amp dst tks mj apv`). `mj`/`apv` aggregate only the selected base metrics.
 - `--evals oexam,pexam` limits the evaluations (any of `oexam pexam lex-exam
   rev-exam` plus `l/r-Top1/3/5`). `deltaexam` appears automatically when
   `oexam` and `pexam` are both selected. Exam-only example:

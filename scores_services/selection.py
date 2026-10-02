@@ -7,10 +7,12 @@ Evaluations: oexam pexam lex-exam rev-exam plus l/r-Top1/3/5.
 and pexam are both selected.
 """
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-BASE_METRICS = ['tar', 'och', 'jac', 'gp', 'op2', 'kul2', 'zol', 'amp']
+BASE_METRICS = ['tar', 'och', 'jac', 'gp', 'op2', 'kul2', 'zol', 'amp', 'dst', 'tks']
 AGGREGATORS = ['mj', 'apv']
+
+MIN_COMBO_SIZE = 3
 
 EXAM_EVALS = ['oexam', 'pexam', 'lex-exam', 'rev-exam']
 TOPK_EVALS = ['l-Top1', 'l-Top3', 'l-Top5', 'r-Top1', 'r-Top3', 'r-Top5']
@@ -120,3 +122,53 @@ class Selection:
 
 def default_selection() -> Selection:
     return Selection()
+
+
+def parse_combo_metrics(spec: Optional[str]) -> List[str]:
+    """Parses the base-metric pool for combination search.
+
+    Aggregators (mj/apv) are rejected: they are auto-added to every combo.
+    At least MIN_COMBO_SIZE base metrics are required.
+    """
+    chosen = _parse_list(spec, BASE_METRICS, "combo metrics")
+    if len(chosen) < MIN_COMBO_SIZE:
+        raise ValueError(
+            f"Select at least {MIN_COMBO_SIZE} base metrics to combine "
+            f"(got {len(chosen)}). Aggregators mj/apv are added automatically."
+        )
+    return chosen
+
+
+def generate_combinations(base_metrics: List[str], min_size: int = MIN_COMBO_SIZE) -> List[tuple]:
+    """All metric combinations of length >= min_size (canonical order kept)."""
+    import itertools
+    pool = [m for m in BASE_METRICS if m in base_metrics]
+    combos = []
+    for size in range(max(min_size, 1), len(pool) + 1):
+        combos.extend(itertools.combinations(pool, size))
+    return combos
+
+
+def combo_label(combo) -> str:
+    """Human-readable label: 'tar, och, jac'."""
+    return ", ".join(combo)
+
+
+def combo_slug(combo) -> str:
+    """Filename-safe slug: 'tar_och_jac'."""
+    return "_".join(combo)
+
+
+def rank_columns(scores: Dict[str, float], higher_is_better: bool = False) -> Dict[str, int]:
+    """Competition ranking (1, 2, 2, 4): best value gets rank 1, ties share it.
+
+    Lower wins for EXAM-style scores, higher wins for Top-K counts.
+    """
+    ranks: Dict[str, int] = {}
+    for metric, value in scores.items():
+        if higher_is_better:
+            better = sum(1 for v in scores.values() if v > value)
+        else:
+            better = sum(1 for v in scores.values() if v < value)
+        ranks[metric] = better + 1
+    return ranks

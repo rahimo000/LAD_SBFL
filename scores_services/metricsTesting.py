@@ -349,5 +349,76 @@ class TestExportPaths(unittest.TestCase):
                          "output/issta13/overall.csv")
 
 
+class TestComboOptimizer(unittest.TestCase):
+
+    def test_generate_combinations(self):
+        from scores_services.selection import generate_combinations
+        combos = generate_combinations(['tar', 'och', 'jac', 'gp'])
+        self.assertEqual(combos, [
+            ('tar', 'och', 'jac'), ('tar', 'och', 'gp'), ('tar', 'jac', 'gp'),
+            ('och', 'jac', 'gp'), ('tar', 'och', 'jac', 'gp'),
+        ])
+        for combo in combos:
+            self.assertGreaterEqual(len(combo), 3)
+        # 3 metrics -> single combo; pool order normalized to canonical
+        self.assertEqual(generate_combinations(['gp', 'tar', 'och']),
+                         [('tar', 'och', 'gp')])
+
+    def test_parse_combo_metrics_validation(self):
+        from scores_services.selection import parse_combo_metrics
+        self.assertEqual(parse_combo_metrics(None)[:3], ['tar', 'och', 'jac'])
+        self.assertEqual(parse_combo_metrics("gp,tar,och"), ['tar', 'och', 'gp'])
+        with self.assertRaises(ValueError):
+            parse_combo_metrics("tar,och")  # fewer than 3
+        with self.assertRaises(ValueError):
+            parse_combo_metrics("tar,och,mj")  # aggregators rejected
+
+    def test_rank_columns_exam_lower_wins_with_ties(self):
+        from scores_services.selection import rank_columns
+        ranks = rank_columns({'a': 10.0, 'b': 20.0, 'c': 20.0, 'd': 30.0})
+        self.assertEqual(ranks, {'a': 1, 'b': 2, 'c': 2, 'd': 4})
+
+    def test_rank_columns_topk_higher_wins(self):
+        from scores_services.selection import rank_columns
+        ranks = rank_columns({'a': 0, 'b': 1, 'c': 1}, higher_is_better=True)
+        self.assertEqual(ranks, {'a': 3, 'b': 1, 'c': 1})
+
+    def test_mj_rank_from_grand_average(self):
+        # End-to-end ranking math on a synthetic grand average.
+        from scores_services.selection import rank_columns
+        grand = {
+            'tar': {'oexam': 0.10, 'l-Top1': 1},
+            'och': {'oexam': 0.20, 'l-Top1': 1},
+            'jac': {'oexam': 0.20, 'l-Top1': 0},
+            'mj': {'oexam': 0.10, 'l-Top1': 1},
+            'apv': {'oexam': 0.30, 'l-Top1': 0},
+        }
+        cols = ['tar', 'och', 'jac', 'mj', 'apv']
+        exam_ranks = rank_columns({m: grand[m]['oexam'] * 100 for m in cols})
+        self.assertEqual(exam_ranks['mj'], 1)  # tied best with tar
+        topk_ranks = rank_columns({m: grand[m]['l-Top1'] * 100 for m in cols},
+                                  higher_is_better=True)
+        self.assertEqual(topk_ranks['mj'], 1)  # tied best with tar/och
+
+    def test_optimize_summary_export_roundtrip(self):
+        from main import export_optimize_summary, print_optimize_summary
+        import io
+        from contextlib import redirect_stdout
+        rows = [("tar, och, jac", {'oexam': 1, 'pexam': 2}),
+                ("och, jac, gp", {'oexam': 3, 'pexam': 1})]
+        labels = ['oexam', 'pexam']
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            print_optimize_summary(rows, labels)
+        out = buf.getvalue()
+        self.assertIn("tar, och, jac", out)
+        with tempfile.TemporaryDirectory() as tmp:
+            from unittest import mock
+            with mock.patch('fileManagment.output_dir', return_value=tmp):
+                for name in ("summary.csv", "summary.xlsx"):
+                    path = export_optimize_summary(f"s/{name}", rows, labels)
+                    self.assertTrue(os.path.isfile(path))
+
+
 if __name__ == '__main__':
     unittest.main()

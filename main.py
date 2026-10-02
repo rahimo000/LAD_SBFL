@@ -170,6 +170,145 @@ def run_project_cmd(dataset: str, project: str,
         if overall: print_overall_exam_scores(project, results, selection=selection)
     return True
 
+def compute_dataset_averages(dataset_name: str, selection: Selection,
+                             overall: bool = True, info: bool = True) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Processes every project of a dataset; returns (project_averages, dataset_results)."""
+    projects = fm.CONFIG[dataset_name]["projects"]
+    project_averages = {}
+    dataset_results = {}
+
+    for project in projects:
+        logger.info(f"Processing project {project}...")
+        results = process_project(dataset_name, project, selection=selection)
+        if results:
+            if overall:
+                avg_map, _ = calculate_overall_averages(results, selection=selection)
+                project_averages[project] = avg_map
+            if info:
+                dataset_results[project] = results
+
+    return project_averages, dataset_results
+
+def run_optimize_cmd(dataset: str, metrics: Optional[str] = None, evals: Optional[str] = None,
+                     output: Optional[str] = None, fmt: str = "xlsx") -> bool:
+    """Searches every metric combination (size >= 3) for the best MJ ranks.
+
+    Exports each combination's dataset-overall report under output/combos/
+    and prints/saves a summary table with MJ's rank per evaluation.
+    """
+    from scores_services.selection import (
+        parse_combo_metrics, parse_evals, Selection,
+        generate_combinations, combo_label, combo_slug, rank_columns,
+    )
+    from printing_service.dataset_printing_service import (
+        selection_rows, calculate_grand_average,
+    )
+    dataset_name = dataset.lower()
+    if dataset_name not in fm.CONFIG:
+        logger.error(f"Dataset {dataset_name} not found in config.")
+        return False
+    try:
+        pool = parse_combo_metrics(metrics)
+        base_selection = Selection(evals=parse_evals(evals))
+    except ValueError as e:
+        logger.error(str(e))
+        return False
+
+    combos = generate_combinations(pool)
+    if not combos:
+        logger.error("No combinations to evaluate.")
+        return False
+    if len(combos) > 60:
+        logger.warning(f"{len(combos)} combinations — this will take a while.")
+    logger.info(f"Evaluating {len(combos)} combinations on dataset {dataset_name}...")
+
+    if fmt not in ("xlsx", "csv"):
+        logger.error(f"Unsupported format: {fmt} (use xlsx or csv).")
+        return False
+
+    summary_rows = []
+    for combo in combos:
+        selection = Selection(metrics=[*combo, 'mj', 'apv'], evals=base_selection.evals)
+        project_averages, _ = compute_dataset_averages(dataset_name, selection, overall=True, info=False)
+        if not project_averages:
+            logger.warning(f"Skipping combo {combo_label(combo)}: no results.")
+            continue
+        combo_file = f"combos/{dataset_name}_combo_{combo_slug(combo)}.{fmt}"
+        if fmt == "xlsx":
+            from printing_service.excel_export_service import export_dataset_overall
+            print_dataset_overall_summary(dataset_name, project_averages, selection=selection)
+            try:
+                real_path = export_dataset_overall(combo_file, dataset_name, project_averages,
+                                                   selection=selection)
+                print(f"Exported results to {real_path}")
+            except Exception as e:
+                logger.error(f"Error exporting combo {combo_label(combo)}: {e}")
+                continue
+        else:
+            with capture_to_csv(combo_file):
+                print_dataset_overall_summary(dataset_name, project_averages, selection=selection)
+
+        rows = selection_rows(selection)
+        grand_avg = calculate_grand_average(project_averages, rows)
+        ranked_cols = [*combo, 'mj', 'apv']
+        mj_ranks = {}
+        for label, key in rows:
+            values = {m: grand_avg[m][key] * 100 for m in ranked_cols}
+            higher = label in selection.topk_evals
+            mj_ranks[label] = rank_columns(values, higher_is_better=higher)['mj']
+        summary_rows.append((combo_label(combo), mj_ranks))
+        logger.info(f"Combo {combo_label(combo)} done; MJ ranks: {mj_ranks}")
+
+    if not summary_rows:
+        logger.error("No combination produced results.")
+        return False
+
+    eval_labels = [label for label, _ in selection_rows(base_selection)]
+    print_optimize_summary(summary_rows, eval_labels)
+    summary_path = output or f"{dataset_name}/combos_summary.csv"
+    try:
+        real_summary = export_optimize_summary(summary_path, summary_rows, eval_labels)
+        print(f"Exported summary to {real_summary}")
+    except Exception as e:
+        logger.error(f"Error exporting summary: {e}")
+        return False
+    return True
+
+
+def print_optimize_summary(summary_rows, eval_labels) -> None:
+    """Prints the MJ rank summary table to the console."""
+    widths = [max(len(r[0]) for r in summary_rows + [("combination",)])] + [max(len(e), 5) for e in eval_labels]
+    header = f"{'combination':<{widths[0]}} | " + " | ".join(f"{e:<{w}}" for e, w in zip(eval_labels, widths[1:]))
+    print(f"\n--- MJ Combination Ranks (rank of mj per evaluation) ---")
+    print(header)
+    print("-" * len(header))
+    for label, ranks in summary_rows:
+        print(f"{label:<{widths[0]}} | " + " | ".join(f"{ranks[e]:<{w}}" for e, w in zip(eval_labels, widths[1:])))
+    print("-" * len(header))
+
+
+def export_optimize_summary(summary_path: str, summary_rows, eval_labels) -> str:
+    """Saves the MJ rank summary table (csv or xlsx by extension)."""
+    real_path = fm.prepare_export_path(summary_path)
+    if real_path.lower().endswith((".xlsx", ".xls")):
+        import xlsxwriter
+        workbook = xlsxwriter.Workbook(real_path)
+        ws = workbook.add_worksheet("MJ ranks")
+        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#1F4E78', 'font_color': 'white'})
+        ws.write_row(0, 0, ["combination"] + eval_labels, header_fmt)
+        for i, (label, ranks) in enumerate(summary_rows, start=1):
+            ws.write_row(i, 0, [label] + [ranks[e] for e in eval_labels])
+        ws.set_column(0, 0, 30)
+        workbook.close()
+    else:
+        import csv
+        with open(real_path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(["combination"] + eval_labels)
+            for label, ranks in summary_rows:
+                writer.writerow([label] + [ranks[e] for e in eval_labels])
+    return real_path
+
 def run_dataset_cmd(dataset: str,
                     overall: bool = False, info: bool = False,
                     output: Optional[str] = None,
@@ -188,18 +327,8 @@ def run_dataset_cmd(dataset: str,
         return False
 
     projects = fm.CONFIG[dataset_name]["projects"]
-    project_averages = {}
-    dataset_results = {}
-
-    for project in projects:
-        logger.info(f"Processing project {project}...")
-        results = process_project(dataset_name, project, selection=selection)
-        if results:
-            if overall:
-                avg_map, _ = calculate_overall_averages(results, selection=selection)
-                project_averages[project] = avg_map
-            if info:
-                dataset_results[project] = results
+    project_averages, dataset_results = compute_dataset_averages(
+        dataset_name, selection, overall=overall, info=info)
 
     if want_excel:
         from printing_service.excel_export_service import export_dataset_overall
@@ -284,6 +413,21 @@ def main():
                                      "dataset overall workbook)")
     dataset_parser.add_argument("dataset")
 
+    # Optimize service: MJ combination search
+    optimize_parser = subparsers.add_parser("optimize")
+    optimize_parser.add_argument("--metrics",
+                                 help="Base metrics to combine, >= 3 "
+                                      "(default: all). E.g. --metrics tar,och,jac,gp")
+    optimize_parser.add_argument("--evals",
+                                 help="Evaluations to rank "
+                                      "(default: all). E.g. --evals oexam,pexam,lex-exam")
+    optimize_parser.add_argument("-f", "--format", default="xlsx", choices=["xlsx", "csv"],
+                                 help="Per-combination report format (default: xlsx)")
+    optimize_parser.add_argument("-o", "--output",
+                                 help="Summary table path, always saved under output/ "
+                                      "(.csv or .xlsx by extension)")
+    optimize_parser.add_argument("dataset")
+
     args = parser.parse_args()
     if not args.service:
         # No subcommand: launch the interactive TUI (unless non-interactive).
@@ -324,6 +468,10 @@ def main():
         run_dataset_cmd(args.dataset, overall=args.overall,
                         info=args.info, output=args.output,
                         selection=_selection_from_args(parser, args))
+
+    elif args.service == "optimize":
+        run_optimize_cmd(args.dataset, metrics=args.metrics, evals=args.evals,
+                         output=args.output, fmt=args.format)
 
 if __name__ == "__main__":
     main()

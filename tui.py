@@ -13,7 +13,7 @@ import questionary
 from rich.console import Console
 
 import fileManagment as fm
-from main import natural_sort_key, run_dataset_cmd, run_project_cmd, run_version_cmd
+from main import natural_sort_key, run_dataset_cmd, run_project_cmd, run_version_cmd, run_optimize_cmd
 from scores_services.selection import (
     Selection,
     all_evals,
@@ -211,13 +211,16 @@ def _dataset_flow() -> None:
             return
         while True:
             scope = _ask_single(f"What for {dataset}?",
-                                ["Single project...", "Whole dataset (all projects)", BACK])
+                                ["Single project...", "Whole dataset (all projects)",
+                                 "Optimize MJ combinations...", BACK])
             if scope is None:
                 raise KeyboardInterrupt
             if scope == BACK:
                 break
             if scope == "Single project...":
                 _project_flow(dataset)
+            elif scope == "Optimize MJ combinations...":
+                _optimize_flow(dataset)
             else:
                 console.print("[yellow]Whole-dataset runs process every project "
                               "and may take a while.[/yellow]")
@@ -233,6 +236,66 @@ def _dataset_flow() -> None:
                 _confirm_and_run(cmd, lambda: run_dataset_cmd(
                     dataset, overall=flags["overall"],
                     info=flags["info"], output=output, selection=selection))
+
+
+def _optimize_flow(dataset: str) -> None:
+    """Guides the MJ combination search: base metrics, evals, format, summary path."""
+    from scores_services.selection import (
+        BASE_METRICS, MIN_COMBO_SIZE, generate_combinations, parse_combo_metrics,
+    )
+    import scores_services as ss
+    display = {key: name for key, _, name in ss.ACTIVE_METRICS}
+
+    while True:
+        metrics = questionary.checkbox(
+            f"Base metrics to combine (pick at least {MIN_COMBO_SIZE})?",
+            choices=[questionary.Choice(f"{m} ({display.get(m, m)})", value=m, checked=True)
+                     for m in BASE_METRICS],
+        ).ask()
+        if metrics is None:  # aborted with Ctrl+C
+            raise KeyboardInterrupt
+        if len(metrics) < MIN_COMBO_SIZE:
+            console.print(f"[red]Pick at least {MIN_COMBO_SIZE} base metrics. Pick again.[/red]")
+            continue
+        try:
+            pool = parse_combo_metrics(",".join(metrics))
+            break
+        except ValueError as e:
+            console.print(f"[red]{e} Pick again.[/red]")
+
+    combos = generate_combinations(pool)
+    console.print(f"[cyan]{len(combos)} combinations will be evaluated.[/cyan]")
+    if len(combos) > 60:
+        proceed = questionary.confirm("This will take a while. Proceed?", default=False).ask()
+        if not proceed:
+            return
+
+    evals = questionary.checkbox(
+        "Evaluations to rank?",
+        choices=[questionary.Choice(e, value=e, checked=True) for e in all_evals()],
+    ).ask()
+    if evals is None:
+        raise KeyboardInterrupt
+    if not evals:
+        console.print("[yellow]No evaluations selected — nothing to rank.[/yellow]")
+        return
+
+    fmt = _ask_single("Per-combination report format?", ["xlsx", "csv", BACK])
+    if fmt is None or fmt == BACK:
+        if fmt is None:
+            raise KeyboardInterrupt
+        return
+    output = _ask_output(default=f"output/{dataset}/combos_summary.{fmt}")
+    parts = ["python main.py", "optimize"]
+    if pool != BASE_METRICS:
+        parts += ["--metrics", ",".join(pool)]
+    parts += ["--evals", ",".join(evals), "-f", fmt, dataset]
+    if output:
+        parts += ["-o", output]
+    cmd = " ".join(parts)
+    _confirm_and_run(cmd, lambda: run_optimize_cmd(dataset, metrics=",".join(pool),
+                                                    evals=",".join(evals),
+                                                    output=output, fmt=fmt))
 
 
 def run_tui() -> None:
