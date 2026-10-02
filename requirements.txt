@@ -1,0 +1,10 @@
+# Core computation (metrics, evaluation, statistics)
+numpy>=1.24
+
+# Excel workbook export (dataset -overall, optimize reports)
+XlsxWriter>=3.0
+
+# Interactive TUI (python main.py with no args)
+# (pulls prompt_toolkit automatically)
+questionary>=2.0
+rich>=13.0

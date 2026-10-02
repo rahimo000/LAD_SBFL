@@ -18,10 +18,13 @@ The tool is optimized for **Big Data** using NumPy vectorization and multiproces
 ## Installation & Setup
 
 ### Prerequisites
-- Python 3.8+
-- NumPy (`pip install numpy`)
-- `questionary` and `rich` for the interactive TUI (`pip install questionary rich`)
-- `XlsxWriter` for the formatted Excel export (`pip install XlsxWriter`)
+- Python 3.10+
+- Install all dependencies with:
+```bash
+pip install -r requirements.txt
+```
+This pulls `numpy` (core computation), `XlsxWriter` (Excel workbook export),
+and `questionary` + `rich` (interactive TUI).
 
 ### Configuration
 Dataset paths and project lists are managed in `config.json`. Ensure the `base_dir` paths match your local environment:
