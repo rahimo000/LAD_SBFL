@@ -4,7 +4,7 @@
         "sub_dir": "1-fault\\Datasets",
         "projects": [
             "eventbus", "daikon", "JParsec", "Jester1", "lang", "jaxen",
-            "htmlparser", "draw2d", "codec", "Jexel", "eventbuslite"
+            "htmlparser", "draw2d", "codec", "Jexel"
         ]
     },
     "siemens": {
